@@ -1,0 +1,23 @@
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /usr/bin/g++ 
+Build flags: “;-undefined;dynamic_lookup“
+Id flags: 
+
+The output was:
+1
+clang: error: no such file or directory: '“'
+
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" failed.
+Compiler: /usr/bin/g++ 
+Build flags: “;-undefined;dynamic_lookup“
+Id flags: -c
+
+The output was:
+1
+clang: error: no such file or directory: '“'
+
+
+Checking whether the CXX compiler is IAR using "" did not match "IAR .+ Compiler":
+clang: error: no such file or directory: '“'
+clang: error: no input files

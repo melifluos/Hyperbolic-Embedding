@@ -1,0 +1,30 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/workspace/CustomerProfiling/item_embedding/src/cpp/test_harness.cpp
+test_harness.h
+/Users/workspace/CustomerProfiling/item_embedding/src/cpp/test_harness.h
+iostream
+-
+fstream
+-
+vector
+-
+string
+-
+sstream
+-
+vector
+-
+iterator
+-
+unordered_map
+-
+
+/Users/workspace/CustomerProfiling/item_embedding/src/cpp/test_harness.h
+

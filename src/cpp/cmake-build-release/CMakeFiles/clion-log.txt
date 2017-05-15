@@ -1,0 +1,4 @@
+/Applications/CLion.app/Contents/bin/cmake/bin/cmake -DCMAKE_BUILD_TYPE=Release -D CMAKE_C_COMPILER=gcc -D CMAKE_CXX_COMPILER=g++ -G "CodeBlocks - Unix Makefiles" /Users/workspace/CustomerProfiling/item_embedding/src/cpp
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /Users/workspace/CustomerProfiling/item_embedding/src/cpp/cmake-build-release
