@@ -262,7 +262,7 @@ class cust2vec():
         with tf.name_scope('model'):
             init_width = 0.5 / opts.embedding_size
             displacement = 1.0  # distance from the origin to put the points - avoids negative radius issues
-            angular_width = tf.asin(init_width/(init_width + displacement))  #  approximate a box of side init_width
+            angular_width = tf.asin(init_width / (init_width + displacement))  # approximate a box of side init_width
             # self.r_in = tf.Variable(tf.sqrt(tf.random_uniform([opts.vocab_size]))+1.0,
             #                    name='r_in')  # generate values in [0,1)
 
@@ -271,22 +271,23 @@ class cust2vec():
 
             # impose a definite positivity constraint
             # self.radius_in = tf.add(tf.nn.relu(self.r_in), tf.constant(1e-9), name='radius_in')
-            self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + 1.0, name='radius_in')
+            self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
+                                         name='radius_in')
 
             # self.theta_in = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
 
-            self.theta_in = tf.Variable(2*angular_width * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
-
+            self.theta_in = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]),
+                                        name='theta_in')  # angle
 
             self.r_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]),
                                      name='r_out')
 
             # self.radius_out = tf.add(tf.nn.relu(self.r_out), tf.constant(1e-9), name='radius_out')
-            self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + 1.0,
+            self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
                                           name='radius_out')
             # self.theta_out = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_out')
 
-            self.theta_out = tf.Variable(2*angular_width * tf.random_uniform([opts.vocab_size]), name='theta_out')
+            self.theta_out = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]), name='theta_out')
 
             # Softmax bias: [emb_dim].
             self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
@@ -351,8 +352,8 @@ def create_final_embedding(radius, theta):
     """
     final_embedding = np.zeros(shape=(len(radius), 2))
     poincare_radius = np.tanh(0.5 * radius)
-    final_embedding[:, 0] = poincare_radius*np.cos(theta)
-    final_embedding[:, 1] = poincare_radius*np.sin(theta)
+    final_embedding[:, 0] = poincare_radius * np.cos(theta)
+    final_embedding[:, 1] = poincare_radius * np.sin(theta)
     return final_embedding
 
 

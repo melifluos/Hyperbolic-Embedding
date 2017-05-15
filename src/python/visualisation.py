@@ -91,9 +91,12 @@ def plot_poincare_embedding(embedding, labels, path):
         pass
     colours = labels
     r = embedding[:, 0]
-    theta = embedding[:, 1]
-    x = r * np.cos(theta)
-    y = r * np.sin(theta)
+    # theta = embedding[:, 1]
+    # x = r * np.cos(theta)
+    # y = r * np.sin(theta)
+
+    x = embedding[:, 0]
+    y = embedding[:, 1]
 
     # for plotting circle line:
     a = np.linspace(0, 2 * np.pi, 500)

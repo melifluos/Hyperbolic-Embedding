@@ -109,9 +109,9 @@ def generate_blogcatalog_embedding():
     log_path = '../../local_resources/tf_logs/run1/'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
     size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=64, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=4)
+                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=4)
 
     path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
 
@@ -132,10 +132,10 @@ def generate_blogcatalog_embedding():
 
 
 if __name__ == '__main__':
-    path = '../../local_resources/blogcatalog/embeddings/Win_20170515-133420.csv'
-    embedding = pd.read_csv(path, index_col=0).values
-    y = utils.read_pickle('../../local_resources/blogcatalog/y.p')
-    visualisation.plot_poincare_embedding(embedding, y,
-                                          '../../results/blogcatalog/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
-    # path = generate_blogcatalog_embedding()
-    # MLD.blogcatalog_scenario(path)
+    # path = '../../local_resources/blogcatalog/embeddings/Win_20170515-133420.csv'
+    # embedding = pd.read_csv(path, index_col=0).values
+    # y = utils.read_pickle('../../local_resources/blogcatalog/y.p')
+    # visualisation.plot_poincare_embedding(embedding, y,
+    #                                       '../../results/blogcatalog /figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
+    path = generate_blogcatalog_embedding()
+    MLD.blogcatalog_scenario(path)

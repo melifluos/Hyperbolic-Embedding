@@ -23,16 +23,16 @@ import datetime
 
 __author__ = 'benchamberlain'
 
-names = [
-    "Logistic_Regression",
-    # "Nearest_Neighbors",
-    # "Linear_SVM",
-    # "RBF_SVM",
-    # "Decision_Tree",
-    # "Random_Forest"
-    # "AdaBoost",
-    # "Gradient_Boosted_Tree"
-]
+# names = [
+#     "Logistic_Regression",
+#     # "Nearest_Neighbors",
+#     # "Linear_SVM",
+#     # "RBF_SVM",
+#     # "Decision_Tree",
+#     # "Random_Forest"
+#     # "AdaBoost",
+#     # "Gradient_Boosted_Tree"
+# ]
 
 names64 = [
     "Logistic_Regression64",
@@ -57,9 +57,9 @@ names128 = [
 ]
 
 classifiers = [
-    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
+    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8), n_jobs=1),
     # KNeighborsClassifier(3),
-    OneVsRestClassifier(SVC(kernel="linear", C=0.0073, probability=True)),
+    # OneVsRestClassifier(SVC(kernel="linear", C=0.0073, probability=True)),
     # SVC(kernel='rbf', gamma=0.011, C=9.0, class_weight='balanced'),
     # DecisionTreeClassifier(max_depth=5),
     # this uses a random forest where: each tree is depth 5, 20 trees, split on entropy, each split uses 10% of features,
@@ -68,32 +68,33 @@ classifiers = [
     # AdaBoostClassifier(),
     # GradientBoostingClassifier(n_estimators=100)
 ]
+#
+# classifiers_embedded_64 = [
+#     OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
+#     # KNeighborsClassifier(3),
+#     # OneVsRestClassifier(SVC(kernel="linear", C=0.11, probability=True)),
+#     # SVC(kernel='rbf', gamma=0.018, C=31, class_weight='balanced'),
+#     # DecisionTreeClassifier(max_depth=5),
+#     # this uses a random forest where: each tree is depth 5, 20 trees, split on entropy, each split uses 10% of features,
+#     # all of the cores are used
+#     # RandomForestClassifier(max_depth=6, n_estimators=50, criterion='entropy', bootstrap=False, max_features=0.21,n_jobs=-1),
+#     # AdaBoostClassifier(),
+#     # GradientBoostingClassifier(n_estimators=100)
+# ]
+#
+# classifiers_embedded_128 = [
+#     OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
+#     # KNeighborsClassifier(3),
+#     # OneVsRestClassifier(SVC(kernel="linear", C=0.11, probability=True)),
+#     # SVC(kernel='rbf', gamma=0.029, C=27.4, class_weight='balanced'),
+#     # DecisionTreeClassifier(max_depth=5),
+#     # this uses a random forest where: each tree is depth 5, 20 trees, split on entropy, each split uses 10% of features,
+#     # all of the cores are used
+#     # RandomForestClassifier(max_depth=7, n_estimators=50, criterion='entropy', bootstrap=False, max_features=0.12,n_jobs=-1),
+#     # AdaBoostClassifier(),
+#     # GradientBoostingClassifier(n_estimators=100)
+# ]
 
-classifiers_embedded_64 = [
-    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
-    # KNeighborsClassifier(3),
-    # OneVsRestClassifier(SVC(kernel="linear", C=0.11, probability=True)),
-    # SVC(kernel='rbf', gamma=0.018, C=31, class_weight='balanced'),
-    # DecisionTreeClassifier(max_depth=5),
-    # this uses a random forest where: each tree is depth 5, 20 trees, split on entropy, each split uses 10% of features,
-    # all of the cores are used
-    # RandomForestClassifier(max_depth=6, n_estimators=50, criterion='entropy', bootstrap=False, max_features=0.21,n_jobs=-1),
-    # AdaBoostClassifier(),
-    # GradientBoostingClassifier(n_estimators=100)
-]
-
-classifiers_embedded_128 = [
-    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
-    # KNeighborsClassifier(3),
-    # OneVsRestClassifier(SVC(kernel="linear", C=0.11, probability=True)),
-    # SVC(kernel='rbf', gamma=0.029, C=27.4, class_weight='balanced'),
-    # DecisionTreeClassifier(max_depth=5),
-    # this uses a random forest where: each tree is depth 5, 20 trees, split on entropy, each split uses 10% of features,
-    # all of the cores are used
-    # RandomForestClassifier(max_depth=7, n_estimators=50, criterion='entropy', bootstrap=False, max_features=0.12,n_jobs=-1),
-    # AdaBoostClassifier(),
-    # GradientBoostingClassifier(n_estimators=100)
-]
 
 
 def run_detectors(X, y, names, classifiers, n_folds):
@@ -110,7 +111,7 @@ def run_detectors(X, y, names, classifiers, n_folds):
     temp.index = names
     results = (temp, temp.copy())
     for name, detector in zip(names, classifiers):
-        print name
+        print 'running: ', name
         results = run_cv_pred(X, y, detector, n_folds, name, results)
     return results
 
@@ -144,6 +145,16 @@ def run_cv_pred(X, y, clf, n_folds, name, results):
         results[0].loc[name, idx] = macro
         results[1].loc[name, idx] = micro
         # y_pred[test_index] = preds
+
+    # add on training results
+    clf.fit(X, y)
+    try:  # Gradient boosted trees do not accept sparse matrices in the predict function currently
+        preds = clf.predict_proba(X)
+    except TypeError:
+        preds = clf.predict_proba(X.todense())
+    macro, micro = mle.evaluate(preds, y)
+    results[0].loc[name, n_folds] = macro
+    results[1].loc[name, n_folds] = micro
 
     return results
 
@@ -181,8 +192,8 @@ def run_all_datasets(datasets, y, names, classifiers, n_folds):
     :return: A tuple of pandas DataFrames for each dataset containing (macroF1, microF1)
     """
     results = []
-    for data in zip(datasets, names, classifiers):
-        temp = run_detectors(data[0], y, data[1], data[2], n_folds)
+    for data in zip(datasets, names):
+        temp = run_detectors(data[0], y, data[1], classifiers, n_folds)
         results.append(temp)
     return results
 
@@ -255,16 +266,15 @@ def blogcatalog_scenario(embedding_path):
     target_path = '../../local_resources/blogcatalog/y.p'
     feature_path = '../../local_resources/blogcatalog/X.p'
     embedding = pd.read_csv(embedding_path, index_col=0).values
-    classifier_names = [names, names128]
-    detectors = [classifiers,
-                 classifiers_embedded_128]
+
+    names = [['logistic'], ['hyp embedding']]
     x = utils.read_pickle(feature_path)
     y = utils.read_pickle(target_path)
     X = [x, embedding]
-    n_folds = 5
-    results = run_all_datasets(X, y, classifier_names, detectors, n_folds)
+    n_folds = 2
+    results = run_all_datasets(X, y, names, classifiers, n_folds)
     all_results = utils.merge_results(results, n_folds)
-    results = utils.stats_test(all_results)
+    results, tests = utils.stats_test(all_results)
     print 'macro', results[0]
     print 'micro', results[1]
     macro_path = '../../results/blogcatalog/macro' + utils.get_timestamp() + '.csv'
