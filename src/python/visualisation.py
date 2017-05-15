@@ -84,6 +84,11 @@ def plot_poincare_embedding(embedding, labels, path):
     :param path: The path to save the figure
     :return:
     """
+    try:
+        if labels.shape[1] > 1:
+            labels = get_first_label(labels)
+    except IndexError:
+        pass
     colours = labels
     r = embedding[:, 0]
     theta = embedding[:, 1]
@@ -108,6 +113,15 @@ def plot_poincare_embedding(embedding, labels, path):
     # fg.canvas.draw()
     plt.savefig(path)
     plt.clf()
+
+
+def get_first_label(labels):
+    """
+    A hack to colour multilabel data by choosing the first label. Might be better to choose the rarest label
+    :param labels: A scipy sparse matrix of labels
+    :return:
+    """
+    return np.array(np.argmax(labels, axis=1)).flatten()
 
 
 def MF_embedding_TSNE():

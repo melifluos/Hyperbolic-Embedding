@@ -269,16 +269,22 @@ class cust2vec():
 
             # impose a definite positivity constraint
             # self.radius_in = tf.add(tf.nn.relu(self.r_in), tf.constant(1e-9), name='radius_in')
-            self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]), name='radius_in')
+            self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + 1.0, name='radius_in')
 
             self.theta_in = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
+
+            # self.theta_in = tf.Variable(2*np.pi * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
+
 
             self.r_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]),
                                      name='r_out')
 
             # self.radius_out = tf.add(tf.nn.relu(self.r_out), tf.constant(1e-9), name='radius_out')
-            self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]), name='radius_out')
+            self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + 1.0,
+                                          name='radius_out')
             self.theta_out = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_out')
+
+            # self.theta_out = tf.Variable(2*np.pi * tf.random_uniform([opts.vocab_size]), name='theta_out')
 
             # Softmax bias: [emb_dim].
             self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
@@ -336,14 +342,15 @@ class cust2vec():
 
 def create_final_embedding(radius, theta):
     """
-    concatenate polar components
+    return embeddings in cartesian co-ordinates in the poincare disk
     :param radius: A numpy array of shape (n_examples)
     :param theta: A numpy array of shape (n_examples)
     :return: A numpy array of shape (n_examples, 2)
     """
     final_embedding = np.zeros(shape=(len(radius), 2))
-    final_embedding[:, 0] = radius
-    final_embedding[:, 1] = theta
+    poincare_radius = np.tanh(0.5 * radius)
+    final_embedding[:, 0] = poincare_radius*np.cos(theta)
+    final_embedding[:, 1] = poincare_radius*np.sin(theta)
     return final_embedding
 
 
@@ -364,14 +371,29 @@ def main(params):
             [model.radius_in, model.theta_in, model.radius_out, model.theta_out])
         emb_in = create_final_embedding(radius_in, theta_in)
         emb_out = create_final_embedding(radius_out, theta_out)
-    return emb_in, emb_out, model._id2word
+
+    def sort_by_idx(embedding, reverse_index):
+        """
+        Generate a numpy array with the rows in the same order as the labels
+        :param embeddings:
+        :param reverse_index:
+        :return:
+        """
+        df = pd.DataFrame(data=embedding, index=np.array(reverse_index))
+        sorted_df = df.sort_index()
+        return sorted_df.values
+
+    sorted_emb_in = sort_by_idx(emb_in, model._id2word)
+    sorted_emb_out = sort_by_idx(emb_out, model._id2word)
+
+    return sorted_emb_in, sorted_emb_out
 
 
 def karate_results(embeddings, names, n_reps, train_size):
-    deepwalk_path = '../../local_resources/zachary_karate/size8_walks1_len10.emd'
+    deepwalk_path = '../../local_resources/karate/size8_walks1_len10.emd'
 
-    y_path = '../../local_resources/zachary_karate/y.p'
-    x_path = '../../local_resources/zachary_karate/X.p'
+    y_path = '../../local_resources/karate/y.p'
+    x_path = '../../local_resources/karate/X.p'
 
     target = utils.read_target(y_path)
 
@@ -408,8 +430,8 @@ def karate_results(embeddings, names, n_reps, train_size):
 def karate_test_scenario(deepwalk_path):
     # deepwalk_path = '../../local_resources/hyperbolic_embeddings/tf_test1.csv'
 
-    y_path = '../../local_resources/zachary_karate/y.p'
-    x_path = '../../local_resources/zachary_karate/X.p'
+    y_path = '../../local_resources/karate/y.p'
+    x_path = '../../local_resources/karate/X.p'
 
     target = utils.read_target(y_path)
 
@@ -434,23 +456,12 @@ def karate_test_scenario(deepwalk_path):
     results[1].to_csv(micro_path, index=True)
 
 
-def sort_by_idx(embedding, reverse_index):
-    """
-    Generate a numpy array with the rows in the same order as the labels
-    :param embeddings:
-    :param reverse_index:
-    :return:
-    """
-    df = pd.DataFrame(data=embedding, index=np.array(reverse_index))
-    sorted_df = df.sort_index()
-    return sorted_df.values
-
-
 def karate_embedding_scenario():
-    walk_path = '../../local_resources/zachary_karate/walks1_len10_p1_q1.csv'
-    # walks = pd.read_csv('../../local_resources/zachary_karate/walks1_len10_p1_q1.csv', header=None).values
-    x_path = '../../local_resources/zachary_karate/X.p'
-    y_path = '../../local_resources/zachary_karate/y.p'
+    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
+    # walks = pd.read_csv('../../local_resources/karate/walks1_len10_p1_q1.csv', header=None).values
+    x_path = '../../local_resources/karate/X.p'
+    y_path = '../../local_resources/karate/y.p'
+
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
     # vocab_size = get_vocab_size(x_path, bipartite=False)
@@ -469,7 +480,7 @@ def karate_embedding_scenario():
                         statistics_interval=2,
                         initial_learning_rate=0.2, epochs=1, concurrent_steps=1)
         embedding, reverse_index = main(params)
-        embeddings.append(sort_by_idx(embedding, reverse_index))
+        embeddings.append(embedding)
         names.append(['window' + str(window)])
         if size == 2:
             visualisation.plot_embedding(embedding, y, '../../results/karate/figs/window_' + str(
@@ -478,21 +489,19 @@ def karate_embedding_scenario():
 
 
 def generate_karate_embedding():
-    y_path = '../../local_resources/zachary_karate/y.p'
+    y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/run4/'
-    walk_path = '../../local_resources/zachary_karate/walks1_len10_p1_q1.csv'
+    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
                     statistics_interval=0.1,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=1)
+                    initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
 
-    embedding_in, embedding_out, reverse_index = main(params)
-    embedding_in = sort_by_idx(embedding_in, reverse_index)
-    embedding_out = sort_by_idx(embedding_out, reverse_index)
+    embedding_in, embedding_out = main(params)
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/karate/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
     visualisation.plot_poincare_embedding(embedding_out, y,
