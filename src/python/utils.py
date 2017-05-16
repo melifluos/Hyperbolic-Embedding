@@ -421,7 +421,8 @@ def read_public_embedding(path, size):
     :param size:
     :return:
     """
-    data = pd.read_csv(path, header=None, index_col=0, skiprows=1, names=np.arange(size), sep=" ")
+    data = pd.read_csv(path, header=None, index_col=0, skiprows=1, sep=" ")
+    # data = pd.read_csv(path, header=None, index_col=0, skiprows=1, names=np.arange(size), sep=" ")
     # make sure the features are in the same order as the targets
     data = data.sort_index(ascending=True)
     return data.as_matrix()

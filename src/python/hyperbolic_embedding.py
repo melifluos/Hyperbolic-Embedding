@@ -11,7 +11,6 @@ import tensorflow as tf
 import pandas as pd
 import utils
 import numpy as np
-import matplotlib.pyplot as plt
 import datetime
 import run_detectors
 from sklearn.preprocessing import normalize
@@ -20,7 +19,6 @@ from preprocessing import Customers
 from sklearn.preprocessing import normalize
 import threading
 import time
-import visualisation
 import run_detectors
 import os
 
@@ -492,6 +490,7 @@ def karate_embedding_scenario():
 
 
 def generate_karate_embedding():
+    import visualisation
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])

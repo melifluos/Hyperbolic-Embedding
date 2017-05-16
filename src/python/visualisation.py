@@ -8,6 +8,8 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import cm
+from numpy import linspace
 
 
 def tsne_plot(X, y):
@@ -76,7 +78,7 @@ def plot_embedding(embedding, labels, path):
     plt.clf()
 
 
-def plot_poincare_embedding(embedding, labels, path):
+def plot_poincare_embedding(embedding, labels, path, annotate=False):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
@@ -95,6 +97,14 @@ def plot_poincare_embedding(embedding, labels, path):
     # x = r * np.cos(theta)
     # y = r * np.sin(theta)
 
+    # these values use the entire colour map, adjusting them selects just a subsection of the map.
+    start = 0.0
+    stop = 1.0
+    cm_subsection = linspace(start, stop, max(labels)+1)
+    # use the jet colour map
+    colour_selection = np.array([cm.jet(idx) for idx in cm_subsection])
+    colours = colour_selection[labels, :]
+
     x = embedding[:, 0]
     y = embedding[:, 1]
 
@@ -104,13 +114,14 @@ def plot_poincare_embedding(embedding, labels, path):
 
     fg, ax = plt.subplots(1, 1)
     ax.plot(cx, cy, '-', alpha=.5)  # draw unit circle line
-    ax.scatter(x, y, c=colours, alpha=0.5)  # plot random points
-    vert_labs = xrange(1, len(labels) + 1)
-    for vert_lab, x, y in zip(vert_labs, x, y):
-        plt.annotate(
-            vert_lab,
-            xy=(x, y), xytext=(-2, 2),
-            textcoords='offset points', ha='right', va='bottom', fontsize=8)
+    ax.scatter(x, y, c=colours, alpha=0.5, s=1)  # plot random points
+    if annotate:
+        vert_labs = xrange(1, len(labels) + 1)
+        for vert_lab, x, y in zip(vert_labs, x, y):
+            plt.annotate(
+                vert_lab,
+                xy=(x, y), xytext=(-2, 2),
+                textcoords='offset points', ha='right', va='bottom', fontsize=8)
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()

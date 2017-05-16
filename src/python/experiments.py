@@ -11,7 +11,6 @@ import tensorflow as tf
 import pandas as pd
 import utils
 import numpy as np
-import matplotlib.pyplot as plt
 import datetime
 import run_detectors
 from sklearn.preprocessing import normalize
@@ -20,7 +19,7 @@ from preprocessing import Customers
 from sklearn.preprocessing import normalize
 import threading
 import time
-import visualisation
+# import visualisation
 import run_detectors
 import os
 import hyperbolic_embedding as HE
@@ -103,15 +102,16 @@ def karate_test_scenario(deepwalk_path):
 
 
 def generate_blogcatalog_embedding():
+    # import visualisation
     s = datetime.datetime.now()
     y_path = '../../local_resources/blogcatalog/y.p'
     y = utils.read_pickle(y_path)
     log_path = '../../local_resources/tf_logs/run1/'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
     size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=64, skip_window=5, num_pairs=1500,
+    params = Params(walk_path, batch_size=256, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=4)
+                    initial_learning_rate=1.0, save_path=log_path, epochs=1, concurrent_steps=4)
 
     path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
 
@@ -121,9 +121,9 @@ def generate_blogcatalog_embedding():
     #                                       '../../results/karate/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
     # visualisation.plot_poincare_embedding(embedding_out, y,
     #                                       '../../results/karate/figs/poincare_polar_Wout' + '_' + utils.get_timestamp() + '.pdf')
-    df_in = pd.DataFrame(data=embedding_in, index=range(embedding_in.shape[0]))
+    df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
-    df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
+    df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
     df_out.to_csv(
         '../../local_resources/blogcatalog/embeddings/Wout' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
@@ -131,11 +131,16 @@ def generate_blogcatalog_embedding():
     return path
 
 
+def visualise_embedding():
+    import visualisation
+    path = '../../local_resources/blogcatalog/embeddings/Win_20170515-160129.csv'
+    embedding = pd.read_csv(path, index_col=0).values
+    y = utils.read_pickle('../../local_resources/blogcatalog/y.p')
+    visualisation.plot_poincare_embedding(embedding, y,
+                                          '../../results/blogcatalog/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
+
+
 if __name__ == '__main__':
-    # path = '../../local_resources/blogcatalog/embeddings/Win_20170515-133420.csv'
-    # embedding = pd.read_csv(path, index_col=0).values
-    # y = utils.read_pickle('../../local_resources/blogcatalog/y.p')
-    # visualisation.plot_poincare_embedding(embedding, y,
-    #                                       '../../results/blogcatalog /figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
-    path = generate_blogcatalog_embedding()
-    MLD.blogcatalog_scenario(path)
+    visualise_embedding()
+    # path = generate_blogcatalog_embedding()
+    # MLD.blogcatalog_scenario(path)

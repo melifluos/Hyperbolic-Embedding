@@ -265,12 +265,16 @@ def karate_test_scenario(deepwalk_path):
 def blogcatalog_scenario(embedding_path):
     target_path = '../../local_resources/blogcatalog/y.p'
     feature_path = '../../local_resources/blogcatalog/X.p'
-    embedding = pd.read_csv(embedding_path, index_col=0).values
+    hyperbolic = pd.read_csv(embedding_path, index_col=0).values
 
-    names = [['logistic'], ['hyp embedding']]
+    paths = ['../../local_resources/blogcatalog/blogcatalog128.emd']
+    sizes = [128]
+    [deepwalk], y = read_embeddings(paths, target_path, sizes)
+
+    names = [['logistic'], ['deepwalk'], ['hyp embedding']]
     x = utils.read_pickle(feature_path)
-    y = utils.read_pickle(target_path)
-    X = [x, embedding]
+    # y = utils.read_pickle(target_path)
+    X = [x, deepwalk, hyperbolic]
     n_folds = 2
     results = run_all_datasets(X, y, names, classifiers, n_folds)
     all_results = utils.merge_results(results, n_folds)
@@ -281,23 +285,6 @@ def blogcatalog_scenario(embedding_path):
     micro_path = '../../results/blogcatalog/micro' + utils.get_timestamp() + '.csv'
     results[0].to_csv(macro_path, index=True)
     results[1].to_csv(micro_path, index=True)
-
-    # print 'without embedding'
-    # results = run_detectors(X[0], y, names, classifiers, n_folds)
-    # # print results
-    # # print 'with 64 embedding'
-    # print 'with embedding'
-    # # y = y[0:100, :]
-    # # X1 = X[1][0:100, :]
-    # results64 = run_detectors(X[1], y, names64, classifiers_embedded_128, n_folds)
-    # # print 'with 128 embedding'
-    # # print 'our one'
-    # # results128 = run_detectors(X[2], y, names128, classifiers_embedded_128, n_folds)
-    # all_results = pd.concat([results, results64])
-    # results = stats_test(all_results)
-    # print results
-    # outpath = 'results/blogcatalog/debug_test' + utils.get_timestamp() + '.csv'
-    # results.to_csv(outpath, index=True)
 
 
 def blogcatalog_deepwalk_node2vec():
