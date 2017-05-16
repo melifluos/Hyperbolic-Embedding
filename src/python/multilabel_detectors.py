@@ -57,7 +57,8 @@ names128 = [
 ]
 
 classifiers = [
-    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8), n_jobs=1),
+    OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8),
+                        n_jobs=1),
     # KNeighborsClassifier(3),
     # OneVsRestClassifier(SVC(kernel="linear", C=0.0073, probability=True)),
     # SVC(kernel='rbf', gamma=0.011, C=9.0, class_weight='balanced'),
@@ -68,6 +69,8 @@ classifiers = [
     # AdaBoostClassifier(),
     # GradientBoostingClassifier(n_estimators=100)
 ]
+
+
 #
 # classifiers_embedded_64 = [
 #     OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000), n_jobs=1),
@@ -283,6 +286,31 @@ def blogcatalog_scenario(embedding_path):
     print 'micro', results[1]
     macro_path = '../../results/blogcatalog/macro' + utils.get_timestamp() + '.csv'
     micro_path = '../../results/blogcatalog/micro' + utils.get_timestamp() + '.csv'
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+
+def blogcatalog_121_scenario(embedding_path):
+    target_path = '../../local_resources/blogcatalog_121_sample/y.p'
+    feature_path = '../../local_resources/blogcatalog_121_sample/X.p'
+    hyperbolic = pd.read_csv(embedding_path, index_col=0).values
+
+    paths = ['../../local_resources/blogcatalog_121_sample/blogcatalog128.emd']
+    sizes = [128]
+    [deepwalk], y = read_embeddings(paths, target_path, sizes)
+
+    names = [['logistic'], ['deepwalk'], ['hyp embedding']]
+    x = utils.read_pickle(feature_path)
+    # y = utils.read_pickle(target_path)
+    X = [x, deepwalk, hyperbolic]
+    n_folds = 2
+    results = run_all_datasets(X, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    print 'macro', results[0]
+    print 'micro', results[1]
+    macro_path = '../../results/blogcatalog_121_sample/macro' + utils.get_timestamp() + '.csv'
+    micro_path = '../../results/blogcatalog_121_sample/micro' + utils.get_timestamp() + '.csv'
     results[0].to_csv(macro_path, index=True)
     results[1].to_csv(micro_path, index=True)
 

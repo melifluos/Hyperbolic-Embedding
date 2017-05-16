@@ -337,10 +337,10 @@ def persist_data(x_path, y_path, X, y):
 
 def persist_sparse_data(folder, X, y):
     """
-    Write the scipy csc sparse matrix X and a pandas DF y to disk
+    Write the scipy csc sparse matrics X and y to disk. Used for multilabel dataa
     :param path: the path to write data to
     :param X: scipy sparse css feature matrix
-    :param y: pandas DF target values with columns [fan_idx, cat]
+    :param y: scipy sparse css multilabel matrix
     :return: None
     """
     pickle_sparse(X, folder + '/X.p')

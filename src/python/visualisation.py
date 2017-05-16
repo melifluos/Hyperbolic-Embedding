@@ -114,7 +114,7 @@ def plot_poincare_embedding(embedding, labels, path, annotate=False):
 
     fg, ax = plt.subplots(1, 1)
     ax.plot(cx, cy, '-', alpha=.5)  # draw unit circle line
-    ax.scatter(x, y, c=colours, alpha=0.5, s=1)  # plot random points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=10)  # plot random points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
