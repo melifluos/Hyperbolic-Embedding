@@ -155,7 +155,24 @@ def generate_blogcatalog_sample(size=128):
     df.to_csv(walkpath, index=False, header=None)
 
 
+def generate_blogcatalog(size=2):
+    xpath = '../../local_resources/blogcatalog/X.p'
+    ypath = '../../local_resources/blogcatalog/y.p'
+    emdpath = '../../local_resources/blogcatalog/blogcatalog2.emd'
+    walkpath = '../../local_resources/blogcatalog/walks_n1_l10.csv'
+    x = utils.read_pickle(xpath)
+    g = Graph(x)
+    print 'building edges'
+    g.build_edge_array()
+    print 'generating walks'
+    walks = g.generate_walks(1, 10)
+    g.learn_embeddings(walks, size, emdpath)
+    print walks.shape
+    df = pd.DataFrame(walks)
+    df.to_csv(walkpath, index=False, header=None)
+
+
 if __name__ == '__main__':
     s = datetime.now()
-    generate_blogcatalog_sample()
+    generate_blogcatalog()
     print datetime.now() - s, ' s'

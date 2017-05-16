@@ -132,6 +132,41 @@ def generate_blogcatalog_embedding():
     return path
 
 
+def generate_blogcatalog_embedding_small():
+    """
+    Uses one walk of length 10 per vertex.
+    :return:
+    """
+    import visualisation
+    s = datetime.datetime.now()
+    y_path = '../../local_resources/blogcatalog/y.p'
+    y = utils.read_pickle(y_path)
+    log_path = '../../local_resources/tf_logs/run1/'
+    walk_path = '../../local_resources/blogcatalog/walks_n1_l10.csv'
+    size = 2  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=10.0,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=4)
+
+    path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
+
+    embedding_in, embedding_out = HE.main(params)
+
+    visualisation.plot_poincare_embedding(embedding_in, y,
+                                          '../../results/blogcatalog/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
+    visualisation.plot_poincare_embedding(embedding_out, y,
+                                          '../../results/blogcatalog/figs/poincare_polar_Wout' + '_' + utils.get_timestamp() + '.pdf')
+    df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
+    df_in.to_csv(path, sep=',')
+    df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
+    df_out.to_csv(
+        '../../local_resources/blogcatalog/embeddings/Wout' + '_' + utils.get_timestamp() + '.csv',
+        sep=',')
+    print('blogcatalog embedding generated in: ', datetime.datetime.now() - s)
+    MLD.blogcatalog_scenario(path)
+    return path
+
+
 def generate_blogcatalog_121_embedding():
     import visualisation
     s = datetime.datetime.now()
@@ -175,6 +210,6 @@ def visualise_embedding():
 
 if __name__ == '__main__':
     # visualise_embedding()
-    generate_blogcatalog_121_embedding()
+    generate_blogcatalog_embedding_small()
     # path = generate_blogcatalog_121_embedding()
     # MLD.blogcatalog_scenario(path)
