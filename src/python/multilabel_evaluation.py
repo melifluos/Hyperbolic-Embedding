@@ -14,6 +14,7 @@ We would have 2 TPs, 1 FP, 2 TN, 1 FN
 
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support
+import utils
 
 __author__ = 'benchamberlain'
 
@@ -92,7 +93,6 @@ def evaluate(probs, y):
     :param preds: numpy array of predictive probabilities
     :return:
     """
-    n_data, n_classes = y.shape
     n_labels = np.array(y.sum(axis=1, dtype=int))
     sorted_class_preds = np.argsort(-probs)
     labels = y.nonzero()

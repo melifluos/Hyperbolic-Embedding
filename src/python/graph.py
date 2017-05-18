@@ -91,7 +91,7 @@ class Graph:
     def learn_embeddings(self, walks, size, outpath):
         """
         learn a word2vec embedding using the gensim library.
-        :param walks: An array of random walks of shape (num_walks, walk_length)
+        :param walks: A numpy array of random walks of shape (num_walks, walk_length)
         :param size: The number of dimensions in the embedding
         :param outpath: Path to write the embedding
         :returns None
@@ -138,11 +138,11 @@ def scenario_generate_public_embeddings(size=128):
         df.to_csv(paths[2], index=False, header=None)
 
 
-def generate_blogcatalog_sample(size=128):
+def generate_blogcatalog_sample(size=2):
     xpath = '../../local_resources/blogcatalog_121_sample/X.p'
     ypath = '../../local_resources/blogcatalog_121_sample/y.p'
-    emdpath = '../../local_resources/blogcatalog_121_sample/blogcatalog128.emd'
-    walkpath = '../../local_resources/blogcatalog_121_sample/walks.csv'
+    emdpath = '../../local_resources/blogcatalog_121_sample/blogcatalog' + str(size) + '.emd'
+    walkpath = '../../local_resources/blogcatalog_121_sample/walks_n1_l10.csv'
     x = utils.read_pickle(xpath)
     g = Graph(x)
     print 'building edges'
@@ -165,6 +165,23 @@ def generate_blogcatalog(size=2):
     print 'building edges'
     g.build_edge_array()
     print 'generating walks'
+    walks = g.generate_walks(2, 20)
+    g.learn_embeddings(walks, size, emdpath)
+    print walks.shape
+    df = pd.DataFrame(walks)
+    df.to_csv(walkpath, index=False, header=None)
+
+
+def generate_political_blogs(size=2):
+    xpath = '../../local_resources/political_blogs/X.p'
+    ypath = '../../local_resources/political_blogs/y.p'
+    emdpath = '../../local_resources/political_blogs/political_blogs2.emd'
+    walkpath = '../../local_resources/political_blogs/walks_n1_l10.csv'
+    x = utils.read_pickle(xpath)
+    g = Graph(x)
+    print 'building edges'
+    g.build_edge_array()
+    print 'generating walks'
     walks = g.generate_walks(1, 10)
     g.learn_embeddings(walks, size, emdpath)
     print walks.shape
@@ -172,7 +189,43 @@ def generate_blogcatalog(size=2):
     df.to_csv(walkpath, index=False, header=None)
 
 
+def generate_political_blogs_deepwalk_embeddings():
+    walkpath = '../../local_resources/political_blogs/walks_n1_l10.csv'
+    walks = pd.read_csv(walkpath, header=None).values
+    xpath = '../../local_resources/political_blogs/X.p'
+    x = utils.read_pickle(xpath)
+    g = Graph(x)
+    sizes = [4, 8, 16, 32, 64, 128]
+    path = '../../local_resources/political_blogs/political_blogs'
+    for size in sizes:
+        emdpath = path + str(size) + '.emd'
+        g.learn_embeddings(walks, size, emdpath)
+
+
+def generate_multiple_walks_and_embeddings():
+    stub = '../../local_resources/'
+    names = ['adjnoun', 'football', 'polbooks']
+    for name in names:
+        ypath = stub + name + '/y.p'
+        xpath = stub + name + '/X.p'
+        walkpath = stub + name + '/walks_n1_l10.csv'
+        path = stub + name + '/' + name
+        x = utils.read_pickle(xpath)
+        g = Graph(x)
+        print 'building edges'
+        g.build_edge_array()
+        print 'generating walks'
+        walks = g.generate_walks(1, 10)
+        print walks.shape
+        df = pd.DataFrame(walks)
+        df.to_csv(walkpath, index=False, header=None)
+        sizes = [2, 4, 8, 16, 32, 64, 128]
+        for size in sizes:
+            emdpath = path + str(size) + '.emd'
+            g.learn_embeddings(walks, size, emdpath)
+
+
 if __name__ == '__main__':
     s = datetime.now()
-    generate_blogcatalog()
+    generate_multiple_walks_and_embeddings()
     print datetime.now() - s, ' s'

@@ -56,7 +56,7 @@ window_size: The number of words to predict to the left and right of the target.
 
 
     // Number of examples to precalculate.
-    const int kPrecalc = 3000;
+    const int kPrecalc = 1;
 // Number of words to read into a sentence before processing.
 
     namespace {

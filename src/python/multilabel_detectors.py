@@ -20,6 +20,7 @@ from sklearn.linear_model import LogisticRegression
 import multilabel_evaluation as mle
 import scipy.stats as stats
 import datetime
+from sklearn.preprocessing import normalize
 
 __author__ = 'benchamberlain'
 
@@ -58,7 +59,7 @@ names128 = [
 
 classifiers = [
     OneVsRestClassifier(LogisticRegression(multi_class='ovr', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8),
-                        n_jobs=1),
+                        n_jobs=1)
     # KNeighborsClassifier(3),
     # OneVsRestClassifier(SVC(kernel="linear", C=0.0073, probability=True)),
     # SVC(kernel='rbf', gamma=0.011, C=9.0, class_weight='balanced'),
@@ -144,7 +145,7 @@ def run_cv_pred(X, y, clf, n_folds, name, results):
         except TypeError:
             probs = clf.predict_proba(X_test.todense())
         macro, micro = mle.evaluate(probs, y[test_index])
-        print 'macro F1, micro F1', macro, micro
+        # print 'macro F1, micro F1', macro, micro
         results[0].loc[name, idx] = macro
         results[1].loc[name, idx] = micro
         # y_pred[test_index] = preds
@@ -194,6 +195,10 @@ def run_all_datasets(datasets, y, names, classifiers, n_folds):
     :param n_folds:
     :return: A tuple of pandas DataFrames for each dataset containing (macroF1, microF1)
     """
+    try:
+        n_data, n_classes = y.shape
+    except ValueError:  # data is encoded with integers instead of one-hot
+        y = utils.make_one_hot(y)
     results = []
     for data in zip(datasets, names):
         temp = run_detectors(data[0], y, data[1], classifiers, n_folds)
@@ -265,6 +270,31 @@ def karate_test_scenario(deepwalk_path):
     results[1].to_csv(micro_path, index=True)
 
 
+def blogcatalog_scenario_small(embedding_path):
+    target_path = '../../local_resources/blogcatalog/y.p'
+    feature_path = '../../local_resources/blogcatalog/X.p'
+    hyperbolic = pd.read_csv(embedding_path, index_col=0).values
+
+    paths = ['../../local_resources/blogcatalog/blogcatalog2_n1_l10.emd']
+    sizes = [128]
+    [deepwalk], y = read_embeddings(paths, target_path, sizes)
+
+    names = [['logistic'], ['deepwalk'], ['hyp embedding']]
+    x = utils.read_pickle(feature_path)
+    # y = utils.read_pickle(target_path)
+    X = [x, deepwalk, hyperbolic]
+    n_folds = 2
+    results = run_all_datasets(X, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    print 'macro', results[0]
+    print 'micro', results[1]
+    macro_path = '../../results/blogcatalog/macro' + utils.get_timestamp() + '.csv'
+    micro_path = '../../results/blogcatalog/micro' + utils.get_timestamp() + '.csv'
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+
 def blogcatalog_scenario(embedding_path):
     target_path = '../../local_resources/blogcatalog/y.p'
     feature_path = '../../local_resources/blogcatalog/X.p'
@@ -290,12 +320,47 @@ def blogcatalog_scenario(embedding_path):
     results[1].to_csv(micro_path, index=True)
 
 
+def run_scenario(folder, embedding_path):
+    y_path = '../../local_resources/{}/y.p'.format(folder)
+    x_path = '../../local_resources/{}/X.p'.format(folder)
+    sizes = [2, 4, 8, 16, 32, 64, 128]
+    deepwalk_embeddings = []
+    deepwalk_names = []
+    dwpath = '../../local_resources/{0}/{1}'.format(folder, folder)
+    for size in sizes:
+        path = dwpath + str(size) + '.emd'
+        de = pd.read_csv(path, header=None, index_col=0, skiprows=1, sep=" ")
+        de.sort_index(inplace=True)
+        deepwalk_embeddings.append(de.values)
+        deepwalk_names.append(['deepwalk' + str(size)])
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    names = [['hyperbolic'], ['logistic']]
+    names = deepwalk_names + names
+
+    embedding = pd.read_csv(embedding_path, index_col=0)
+    X = deepwalk_embeddings + [embedding.values, normalize(x, axis=0)]
+    n_folds = 10
+    results = run_all_datasets(X, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    tests[0].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    tests[1].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    print('macro', results[0])
+    print('micro', results[1])
+    macro_path = '../../results/{0}/macro{1}.csv'.format(folder, utils.get_timestamp())
+    micro_path = '../../results/{0}/micro{1}.csv'.format(folder, utils.get_timestamp())
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+
 def blogcatalog_121_scenario(embedding_path):
     target_path = '../../local_resources/blogcatalog_121_sample/y.p'
     feature_path = '../../local_resources/blogcatalog_121_sample/X.p'
     hyperbolic = pd.read_csv(embedding_path, index_col=0).values
 
-    paths = ['../../local_resources/blogcatalog_121_sample/blogcatalog128.emd']
+    paths = ['../../local_resources/blogcatalog_121_sample/blogcatalog2.emd']
     sizes = [128]
     [deepwalk], y = read_embeddings(paths, target_path, sizes)
 
@@ -339,9 +404,83 @@ def blogcatalog_deepwalk_node2vec():
     results[1].to_csv(micro_path, index=True)
 
 
+def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
+    """
+    Run repeated experiments on random train test splits of the data
+    :param data: an iterable of numpy arrays
+    :param target: a numpy array of target variables
+    :param clf: a scikit-learn classifier
+    :param names: the names of the data sets. Size should match data
+    :param reps: the number of repetitions to run for each dataset
+    :param train_pct: the percentage of the data to use for training. The rest will be held out for the test set.
+    :return:
+    """
+    results = np.zeros(shape=(len(data), reps))
+    for rep in range(reps):
+        msk = np.random.rand(len(target)) < train_pct
+        y_train = target[msk]
+        y_test = target[~msk]
+        for idx, dataset in enumerate(data):
+            X_train = dataset[msk, :]
+            X_test = dataset[~msk, :]
+            clf.fit(X_train, y_train)
+            probs = clf.predict_proba(X_test)
+            res = utils.get_metrics(y_test, probs)[0]
+            # print('rep{0} '.format(idx), res)
+            results[idx, rep] = res
+    train = []
+    mean = results.mean(axis=1)
+    for idx, dataset in enumerate(data):
+        clf.fit(dataset, target)
+        probs = clf.predict_proba(dataset)
+        res = utils.get_metrics(target, probs, auc=False)[0]
+        train.append(res)
+
+    df = pd.DataFrame(data=results, index=names)
+    df['mean'] = mean
+    df['train'] = train
+
+    return df
+
+
+def run_test_train_split_scenario(folder, embedding_path):
+    y_path = '../../local_resources/{}/y.p'.format(folder)
+    x_path = '../../local_resources/{}/X.p'.format(folder)
+    sizes = [2, 4, 8, 16, 32, 64, 128]
+    deepwalk_embeddings = []
+    deepwalk_names = []
+    dwpath = '../../local_resources/{0}/{1}'.format(folder, folder)
+    for size in sizes:
+        path = dwpath + str(size) + '.emd'
+        de = pd.read_csv(path, header=None, index_col=0, skiprows=1, sep=" ")
+        de.sort_index(inplace=True)
+        deepwalk_embeddings.append(de.values)
+        deepwalk_names.append(['deepwalk' + str(size)])
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    names = [['hyperbolic']]
+    names = deepwalk_names + names
+
+    embedding = pd.read_csv(embedding_path, index_col=0)
+    X = deepwalk_embeddings + [embedding.values, normalize(x, axis=0)]
+    nreps = 10
+    results = run_repetitions(X, y, names, classifiers[0], nreps)
+    all_results = utils.merge_results(results, nreps)
+    results, tests = utils.stats_test(all_results)
+    tests[0].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    tests[1].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    print('macro', results[0])
+    print('micro', results[1])
+    macro_path = '../../results/{0}/macro{1}.csv'.format(folder, utils.get_timestamp())
+    micro_path = '../../results/{0}/micro{1}.csv'.format(folder, utils.get_timestamp())
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+
 if __name__ == "__main__":
     s = datetime.datetime.now()
-    blogcatalog_scenario('../../local_resources/blogcatalog/embeddings/Win_20170515-113351.csv')
+    blogcatalog_scenario_small('../../local_resources/blogcatalog/embeddings/Win_20170516-221306.csv')
     print datetime.datetime.now() - s
     # X, y = read_data(5)
 

@@ -171,10 +171,10 @@ class cust2vec():
         workers = []
         for thread_counter in xrange(opts.concurrent_steps):
             t = threading.Thread(target=self._train_thread_body)
-            print('starting thread: ', thread_counter)
+            # print('starting thread: ', thread_counter)
             t.start()
             workers.append(t)
-        print('current epoch: ', initial_epoch)
+        print('running epoch: ', initial_epoch, ' on ', opts.concurrent_steps, ' threads')
         last_words, last_time, last_summary_time = initial_words, time.time(), 0
         while True:
             time.sleep(opts.statistics_interval)  # Reports our progress once a while.

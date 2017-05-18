@@ -86,24 +86,23 @@ def plot_poincare_embedding(embedding, labels, path, annotate=False):
     :param path: The path to save the figure
     :return:
     """
+    # labels = np.array(labels)
     try:
         if labels.shape[1] > 1:
             labels = get_first_label(labels)
     except IndexError:
         pass
-    colours = labels
-    r = embedding[:, 0]
-    # theta = embedding[:, 1]
-    # x = r * np.cos(theta)
-    # y = r * np.sin(theta)
 
-    # these values use the entire colour map, adjusting them selects just a subsection of the map.
-    start = 0.0
-    stop = 1.0
-    cm_subsection = linspace(start, stop, max(labels)+1)
-    # use the jet colour map
-    colour_selection = np.array([cm.jet(idx) for idx in cm_subsection])
-    colours = colour_selection[labels, :]
+    if len(np.unique(labels)) < 3:
+        colours = labels
+    else:
+        # these values use the entire colour map, adjusting them selects just a subsection of the map.
+        start = 0.0
+        stop = 1.0
+        cm_subsection = linspace(start, stop, max(labels) + 1)
+        # use the jet colour map
+        colour_selection = np.array([cm.jet(idx) for idx in cm_subsection])
+        colours = colour_selection[labels, :]
 
     x = embedding[:, 0]
     y = embedding[:, 1]

@@ -41,7 +41,7 @@ class MLdataset(object):
         self.test = test
 
 
-def get_metrics(y, probs, verbose=False, auc=True):
+def get_metrics(y, probs, verbose=False, auc=False):
     """
     generate metrics to assess the detectors
     :param y: the true labels
@@ -323,6 +323,54 @@ def adj2edgelist(adj):
     return df
 
 
+def prune_disconnected(X, y):
+    """
+    remove vertices that have no edges from the label and adjacency matrices
+    :param X: adj mat
+    :param y: labels
+    :return:
+    """
+    keep = np.where(X.sum(axis=1) > 0)[0]
+    Xkeep = X[keep, :]
+    Xkeep = Xkeep[:, keep]
+    try:
+        ykeep = y[keep, :]
+    except IndexError:
+        ykeep = y[keep]
+    return Xkeep, ykeep
+
+
+def check_symmetric(a, tol=1e-8):
+    return np.allclose(a, a.T, atol=tol)
+
+
+def read_gml(inpath, xpath, ypath, attribute_name='value'):
+    import networkx as nx
+    try:
+        G = nx.read_gml(inpath)
+    except nx.exception.NetworkXError:
+        print """THIS ERROR HAPPENS BECAUSE NETWORKX IS NOT BACKWARD COMPATIBLE AND YOU
+        ARE USING AN OLD GML FORMAT. THE BEST OPTION IS TO DOWNGRADE THE VERSION OF NETWORKX
+        pip uninstall networkx
+        pip install networkx==1.9.1
+        """
+        raise
+    G = G.to_undirected()
+    # get labels
+    label_dic = nx.get_node_attributes(G, attribute_name)
+    y = np.array([v for k, v in label_dic.iteritems()])
+    nodes = [k for k, v in label_dic.iteritems()]
+    X = nx.adjacency_matrix(G, nodes)
+    print('X shape: ', X.shape, 'y shape: ', y.shape)
+    # removed as can kill memory
+    # assert(check_symmetric(X.todense()))
+    X, y = prune_disconnected(X, y)
+    print('after pruning disconnected vertices. X shape: ', X.shape, 'y shape: ', y.shape)
+    ydf = pd.DataFrame(data=y, index=range(len(y)), columns=['cat'])
+    persist_data(xpath, ypath, X, ydf)
+    return X, ydf
+
+
 def persist_data(x_path, y_path, X, y):
     """
     Write the scipy csc sparse matrix X and a pandas DF y to disk
@@ -356,6 +404,21 @@ def read_mat(path):
     """
     data = loadmat(path)
     return data['network'], data['group']
+
+
+def map_polbooks():
+    y = read_pickle('../../local_resources/polbooks/y_char.p')
+
+    def polbook_map(x):
+        if x == 'n':
+            return 0
+        if x == 'c':
+            return 1
+        if x == 'l':
+            return 2
+
+    y['cat'] = y['cat'].apply(polbook_map)
+    y.to_pickle('../../local_resources/polbooks/y.p')
 
 
 def read_roberto_embedding(path, target, size):
@@ -437,6 +500,25 @@ def not_hot(X):
     return X.nonzero()[1]
 
 
+def make_one_hot(X):
+    """
+    Take a vector of integers and convert to one-hot. Assumes min label is zero or 1
+    :param X: A 1d numpy integer array of shape (ndata)
+    :return: a 2d numpy binary array of shape (ndate, nclasses)
+    """
+    min = X.min()
+    idx = X
+    if min == 0:
+        nclasses = X.max() + 1
+    else:
+        nclasses = X.max()
+        idx -= 1
+    ndata = len(X)
+    one_hot = np.zeros(shape=(ndata, nclasses))
+    one_hot[range(ndata), X] = 1
+    return one_hot
+
+
 def read_data(x_path, y_path, threshold):
     """
     reads the features and target variables
@@ -450,6 +532,18 @@ def read_data(x_path, y_path, threshold):
     return X1, y
 
 
+def profile_network(folder):
+    """
+    prints out basic statistics of a network providing y.p and X.p live in folder
+    :param folder: path to the data
+    :return:
+    """
+    X, y = read_data(folder + 'X.p', folder + 'y.p', 0)
+    print max(y) - min(y) + 1
+    print X.sum() / 2
+    print np.bincount(y) / float(len(y))
+
+
 def get_timestamp():
     """
     get a string timestamp to put on files
@@ -460,7 +554,11 @@ def get_timestamp():
 
 def read_pickle(path):
     with open(path, 'rb') as infile:
-        return pickle.load(infile)
+        try:
+            data = pd.read_pickle(infile)
+        except IndexError:  # not a dataframe
+            data = pickle.load(infile)
+        return data
 
 
 def read_target(path):
@@ -530,7 +628,7 @@ def stats_test(results_tuple):
     tests = []
     for idx, results in enumerate(results_tuple):
         results['mean'] = results.ix[:, :-1].mean(axis=1)
-        results = results.sort('mean', ascending=False)
+        results = results.sort_values('mean', ascending=False)
 
         try:
             print '1 versus 2'
@@ -693,12 +791,24 @@ if __name__ == "__main__":
     # persist_edgelist(edge_list, 'resources/test/balanced7.edgelist')
     # persist_data('resources/test/balanced7X.p', 'resources/test/balanced7y.p',
     #              X, y)
+    # path = '../../local_resources/political_blogs/polblogs.gml'
+    # ypath = '../../local_resources/political_blogs/y.p'
+    # xpath = '../../local_resources/political_blogs/X.p'
 
-    adj = read_pickle('resources/test/balanced7_10_thresh_X.p')
-    df = adj2edgelist(adj)
-    persist_edgelist(df, 'resources/test/balanced7_10_thresh.edgelist')
+    stub = '../../local_resources/'
+    names = ['adjnoun', 'football', 'polbooks']
+    for name in names:
+        path = stub + name + '/' + name + '.gml'
+        ypath = stub + name + '/y.p'
+        xpath = stub + name + '/X.p'
+        print path
+        read_gml(path, xpath, ypath, attribute_name='value')
 
-    # edge_list = pd.read_csv('local_resources/zachary_karate/karate.edgelist', header=None)
-    # x = public_edge_list_to_sparse_mat(edge_list)
-    # y = pd.read_csv('local_resources/zachary_karate/y.csv')
-    # persist_data('local_resources/zachary_karate/X.p', 'local_resources/zachary_karate/y.p', x, y)
+        # adj = read_pickle('resources/test/balanced7_10_thresh_X.p')
+        # df = adj2edgelist(adj)
+        # persist_edgelist(df, 'resources/test/balanced7_10_thresh.edgelist')
+
+        # edge_list = pd.read_csv('local_resources/zachary_karate/karate.edgelist', header=None)
+        # x = public_edge_list_to_sparse_mat(edge_list)
+        # y = pd.read_csv('local_resources/zachary_karate/y.csv')
+        # persist_data('local_resources/zachary_karate/X.p', 'local_resources/zachary_karate/y.p', x, y)
