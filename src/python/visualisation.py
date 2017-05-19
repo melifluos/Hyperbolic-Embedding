@@ -35,6 +35,19 @@ def tsne_plot(X, y):
     plt.show()
 
 
+def plot_results(names):
+    for name in names:
+        outpath = '../../results/all/lineplots/{}.pdf'.format(name)
+        errpath = '../../results/all/{}_errors.csv'.format(name)
+        meanpath = '../../results/all/{}_means.csv'.format(name)
+        errors = pd.read_csv(errpath, index_col=0)
+        means = pd.read_csv(meanpath, index_col=0)
+        df = pd
+        ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
+        ax.legend(bbox_to_anchor=(1.3, 1.05))
+        plt.savefig(outpath)
+
+
 def plot_rfcev(rfecv, outpath):
     """
     Plot the rfcev grid scores produced by a greedy optimisation of the number of features in a random forest
@@ -128,6 +141,51 @@ def plot_poincare_embedding(embedding, labels, path, annotate=False):
     plt.clf()
 
 
+def plot_deepwalk_embedding(embedding, labels, path, annotate=False):
+    """
+    plots the hyperbolic embedding on the Poincare disc
+    :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
+    :param labels: A numpy array of size (ndata, 1)
+    :param path: The path to save the figure
+    :return:
+    """
+    # labels = np.array(labels)
+    try:
+        if labels.shape[1] > 1:
+            labels = get_first_label(labels)
+    except IndexError:
+        pass
+
+    if len(np.unique(labels)) < 3:
+        colours = labels
+    else:
+        # these values use the entire colour map, adjusting them selects just a subsection of the map.
+        start = 0.0
+        stop = 1.0
+        cm_subsection = linspace(start, stop, max(labels) + 1)
+        # use the jet colour map
+        colour_selection = np.array([cm.jet(idx) for idx in cm_subsection])
+        colours = colour_selection[labels, :]
+
+    x = embedding[:, 0]
+    y = embedding[:, 1]
+
+    fg, ax = plt.subplots(1, 1)
+    ax.scatter(x, y, c=colours, alpha=0.5, s=10)  # plot random points
+    if annotate:
+        vert_labs = xrange(1, len(labels) + 1)
+        for vert_lab, x, y in zip(vert_labs, x, y):
+            plt.annotate(
+                vert_lab,
+                xy=(x, y), xytext=(-2, 2),
+                textcoords='offset points', ha='right', va='bottom', fontsize=8)
+    ax.axis('equal')
+    ax.grid(True)
+    # fg.canvas.draw()
+    plt.savefig(path)
+    plt.clf()
+
+
 def get_first_label(labels):
     """
     A hack to colour multilabel data by choosing the first label. Might be better to choose the rarest label
@@ -154,4 +212,4 @@ def MF_embedding_TSNE():
 
 
 if __name__ == '__main__':
-    MF_embedding_TSNE()
+    plot_results(['polbooks'])

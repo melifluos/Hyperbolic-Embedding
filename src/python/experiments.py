@@ -212,7 +212,7 @@ def generate_blogcatalog_embedding():
     return path
 
 
-def run_embedding(folder):
+def run_embedding(folder, run_scenario=True):
     import visualisation
     s = datetime.datetime.now()
     y_path = '../../local_resources/{}/y.p'.format(folder)
@@ -242,7 +242,9 @@ def run_embedding(folder):
         '../../local_resources/{0}/embeddings/Wout_{1}.csv'.format(folder, utils.get_timestamp()),
         sep=',')
     print('{} embedding generated in: '.format(folder), datetime.datetime.now() - s)
-    MLD.run_scenario(folder, path)
+    if run_scenario:
+        MLD.run_scenario(folder, path)
+    return path
 
 
 def generate_blogcatalog_embedding_small():
@@ -350,27 +352,49 @@ def multiple_embeddings_and_evaluation_scenario():
         run_embedding(name)
 
 
-def visualise_embedding():
+def visualise_deepwalk(emb_path, ypath, outfolder):
     import visualisation
-    path = '../../local_resources/blogcatalog/embeddings/Win_20170515-160129.csv'
-    embedding = pd.read_csv(path, index_col=0).values
-    y = utils.read_pickle('../../local_resources/blogcatalog/y.p')
-    visualisation.plot_poincare_embedding(embedding, y,
-                                          '../../results/blogcatalog/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
-
-
-
+    # path = '../../local_resources/blogcatalog/embeddings/Win_20170515-160129.csv'
+    embedding = pd.read_csv(emb_path, index_col=0, header=None, skiprows=1, sep=" ").values
+    # ypath = '../../local_resources/blogcatalog/y.p'
+    y = utils.read_pickle(ypath)
+    y = y['cat'].values
+    outpath = outfolder + '/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf'
+    visualisation.plot_deepwalk_embedding(embedding, y, outpath)
 
 
 def nips_experiment_runner():
-    # names = ['football', 'adjnoun', 'polbooks']
-    names = ['polbooks']
+    # names = ['football', 'adjnoun', 'polbooks', 'politicl_blogs', 'karate']
+    # names = ['polbooks']
+    names = ['political_blogs', 'karate']
+
     for name in names:
-        MLD.run_test_train_split_scenario(name, '../../local_resources/polbooks/embeddings/Win_20170518-102835.csv')
+        embedding_path = run_embedding(name, run_scenario=False)
+        mean_path = '../../results/all/{}_means.csv'.format(name)
+        error_path = '../../results/all/{}_errors.csv'.format(name)
+        means, errors = MLD.run_test_train_split_scenario(name, embedding_path)
+        means.to_csv(mean_path)
+        errors.to_csv(error_path)
+
+
+def plot_deepwalk_embeddings():
+    """
+    plots the 2D deepwalk embeddings
+    :return:
+    """
+    # names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
+    names = ['political_blogs', 'karate']
+    for name in names:
+        emb_path = '../../local_resources/{}/{}2.emd'.format(name, name)
+        ypath = '../../local_resources/{}/y.p'.format(name)
+        outfolder = '../../local_resources/{}/deepwalk_figs'.format(name)
+        visualise_deepwalk(emb_path, ypath, outfolder)
 
 
 if __name__ == '__main__':
     nips_experiment_runner()
+    # plot_deepwalk_embeddings()
+    # nips_experiment_runner()
     # folder = 'karate'
     # y_path = '../../local_resources/{}/y.p'.format(folder)
     # x_path = '../../local_resources/{}/X.p'.format(folder)

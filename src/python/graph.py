@@ -204,7 +204,7 @@ def generate_political_blogs_deepwalk_embeddings():
 
 def generate_multiple_walks_and_embeddings():
     stub = '../../local_resources/'
-    names = ['adjnoun', 'football', 'polbooks']
+    names = ['karate']
     for name in names:
         ypath = stub + name + '/y.p'
         xpath = stub + name + '/X.p'

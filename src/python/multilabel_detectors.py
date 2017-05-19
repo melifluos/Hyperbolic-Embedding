@@ -21,6 +21,7 @@ import multilabel_evaluation as mle
 import scipy.stats as stats
 import datetime
 from sklearn.preprocessing import normalize
+from scipy.stats import sem
 
 __author__ = 'benchamberlain'
 
@@ -429,6 +430,7 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
             # print('rep{0} '.format(idx), res)
             results[idx, rep] = res
     train = []
+    std_error = sem(results, axis=1)
     mean = results.mean(axis=1)
     for idx, dataset in enumerate(data):
         clf.fit(dataset, target)
@@ -439,6 +441,7 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
     df = pd.DataFrame(data=results, index=names)
     df['mean'] = mean
     df['train'] = train
+    df['sde'] = std_error
 
     return df
 
@@ -455,27 +458,39 @@ def run_test_train_split_scenario(folder, embedding_path):
         de = pd.read_csv(path, header=None, index_col=0, skiprows=1, sep=" ")
         de.sort_index(inplace=True)
         deepwalk_embeddings.append(de.values)
-        deepwalk_names.append(['deepwalk' + str(size)])
+        deepwalk_names.append('deepwalk' + str(size))
 
     x, y = utils.read_data(x_path, y_path, threshold=0)
 
-    names = [['hyperbolic']]
-    names = deepwalk_names + names
+    names = ['hyperbolic']
+    names = np.array(names + deepwalk_names)
 
     embedding = pd.read_csv(embedding_path, index_col=0)
-    X = deepwalk_embeddings + [embedding.values, normalize(x, axis=0)]
+    X = [embedding.values] + deepwalk_embeddings
     nreps = 10
-    results = run_repetitions(X, y, names, classifiers[0], nreps)
-    all_results = utils.merge_results(results, nreps)
-    results, tests = utils.stats_test(all_results)
-    tests[0].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
-    tests[1].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
-    print('macro', results[0])
-    print('micro', results[1])
-    macro_path = '../../results/{0}/macro{1}.csv'.format(folder, utils.get_timestamp())
-    micro_path = '../../results/{0}/micro{1}.csv'.format(folder, utils.get_timestamp())
-    results[0].to_csv(macro_path, index=True)
-    results[1].to_csv(micro_path, index=True)
+    splits = np.linspace(0.1, 0.9, 9)
+    means = pd.DataFrame(columns=splits, index=names)
+    errors = pd.DataFrame(columns=splits, index=names)
+    for pct in splits:
+        print 'running {0} for training split {1}'.format(folder, pct)
+        results = run_repetitions(X, y, names, classifiers[0], nreps, train_pct=pct)
+        means.loc[:, pct] = results['mean']
+        errors.loc[:, pct] = results['sde']
+    print means
+    print errors
+    return means, errors
+
+    # all_results = utils.merge_results(results, nreps)
+    # results, tests = utils.stats_test(all_results)
+    #
+    # tests[0].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    # tests[1].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
+    # print('macro', results[0])
+    # print('micro', results[1])
+    # macro_path = '../../results/{0}/macro{1}.csv'.format(folder, utils.get_timestamp())
+    # micro_path = '../../results/{0}/micro{1}.csv'.format(folder, utils.get_timestamp())
+    # results[0].to_csv(macro_path, index=True)
+    # results[1].to_csv(micro_path, index=True)
 
 
 if __name__ == "__main__":
