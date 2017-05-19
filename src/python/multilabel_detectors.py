@@ -426,17 +426,17 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
             X_test = dataset[~msk, :]
             clf.fit(X_train, y_train)
             probs = clf.predict_proba(X_test)
-            res = utils.get_metrics(y_test, probs)[0]
+            macro, micro = utils.get_metrics(y_test, probs, auc=False)
             # print('rep{0} '.format(idx), res)
-            results[idx, rep] = res
+            results[idx, rep] = micro
     train = []
     std_error = sem(results, axis=1)
     mean = results.mean(axis=1)
     for idx, dataset in enumerate(data):
         clf.fit(dataset, target)
         probs = clf.predict_proba(dataset)
-        res = utils.get_metrics(target, probs, auc=False)[0]
-        train.append(res)
+        macro, micro = utils.get_metrics(target, probs, auc=False)
+        train.append(micro)
 
     df = pd.DataFrame(data=results, index=names)
     df['mean'] = mean

@@ -35,16 +35,34 @@ def tsne_plot(X, y):
     plt.show()
 
 
-def plot_results(names):
+def plot_error_bars(ax, data, sde):
+    xvals = np.arange(0, 9, 1)
+    for idx in range(data.shape[1]):
+        if idx == 0:
+            col = 'b'
+        else:
+            col = 'r'
+        ax.fill_between(xvals.T, data[:, idx] - sde[:, idx], data[:, idx] + sde[:, idx], interpolate=True, alpha=0.1,
+                        color=col)
+    return ax
+
+
+def plot_lines_from_df(names):
+    styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
     for name in names:
+        if name == 'football':
+            legend = True
+        else:
+            legend = False
         outpath = '../../results/all/lineplots/{}.pdf'.format(name)
         errpath = '../../results/all/{}_errors.csv'.format(name)
         meanpath = '../../results/all/{}_means.csv'.format(name)
-        errors = pd.read_csv(errpath, index_col=0)
-        means = pd.read_csv(meanpath, index_col=0)
-        df = pd
-        ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
-        ax.legend(bbox_to_anchor=(1.3, 1.05))
+        errors = pd.read_csv(errpath, index_col=0).transpose()
+        means = pd.read_csv(meanpath, index_col=0).transpose()
+        ax = means.plot(style=styles, legend=legend, kind='line')
+        # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
+        # ax.legend(bbox_to_anchor=(1.3, 1.05))
+        ax = plot_error_bars(ax, means.values, errors.values)
         plt.savefig(outpath)
 
 
@@ -212,4 +230,4 @@ def MF_embedding_TSNE():
 
 
 if __name__ == '__main__':
-    plot_results(['polbooks'])
+    plot_lines_from_df(['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate'])

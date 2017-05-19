@@ -364,9 +364,9 @@ def visualise_deepwalk(emb_path, ypath, outfolder):
 
 
 def nips_experiment_runner():
-    # names = ['football', 'adjnoun', 'polbooks', 'politicl_blogs', 'karate']
+    names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
     # names = ['polbooks']
-    names = ['political_blogs', 'karate']
+    # names = ['political_blogs', 'karate']
 
     for name in names:
         embedding_path = run_embedding(name, run_scenario=False)
