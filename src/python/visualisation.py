@@ -98,7 +98,7 @@ def plot_embedding(embedding, labels, path):
 
 def plot_embedding(embedding, labels, path):
     colours = labels
-    plt.scatter(embedding[:, 0], embedding[:, 1], c=colours, alpha=0.5)
+    plt.scatter(embedding[:, 0], embedding[:, 1], c=colours, alpha=0.4)
     vert_labs = xrange(1, len(labels) + 1)
     for vert_lab, x, y in zip(vert_labs, embedding[:, 0], embedding[:, 1]):
         plt.annotate(
@@ -109,7 +109,7 @@ def plot_embedding(embedding, labels, path):
     plt.clf()
 
 
-def plot_poincare_embedding(embedding, labels, path, annotate=False):
+def plot_poincare_embedding(embedding, labels, path, annotate=True):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
@@ -144,14 +144,14 @@ def plot_poincare_embedding(embedding, labels, path, annotate=False):
 
     fg, ax = plt.subplots(1, 1)
     ax.plot(cx, cy, '-', alpha=.5)  # draw unit circle line
-    ax.scatter(x, y, c=colours, alpha=0.5, s=10)  # plot random points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=200)  # plot random points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
             plt.annotate(
                 vert_lab,
                 xy=(x, y), xytext=(-2, 2),
-                textcoords='offset points', ha='right', va='bottom', fontsize=8)
+                textcoords='offset points', ha='right', va='bottom', fontsize=20)
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()
@@ -159,7 +159,7 @@ def plot_poincare_embedding(embedding, labels, path, annotate=False):
     plt.clf()
 
 
-def plot_deepwalk_embedding(embedding, labels, path, annotate=False):
+def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
@@ -189,14 +189,14 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=False):
     y = embedding[:, 1]
 
     fg, ax = plt.subplots(1, 1)
-    ax.scatter(x, y, c=colours, alpha=0.5, s=10)  # plot random points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=200)  # plot points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
             plt.annotate(
                 vert_lab,
-                xy=(x, y), xytext=(-2, 2),
-                textcoords='offset points', ha='right', va='bottom', fontsize=8)
+                xy=(x, y), xytext=(-3, 3),
+                textcoords='offset points', ha='right', va='bottom', fontsize=20)
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()

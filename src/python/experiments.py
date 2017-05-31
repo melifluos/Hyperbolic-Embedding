@@ -53,13 +53,14 @@ class Params:
 
 
 def generate_karate_embedding():
+    import visualisation
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/run4/'
-    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
+    walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.1,
                     initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=1)
 
@@ -383,7 +384,8 @@ def plot_deepwalk_embeddings():
     :return:
     """
     # names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
-    names = ['political_blogs', 'karate']
+    # names = ['political_blogs', 'karate']
+    names = ['karate']
     for name in names:
         emb_path = '../../local_resources/{}/{}2.emd'.format(name, name)
         ypath = '../../local_resources/{}/y.p'.format(name)
@@ -392,7 +394,8 @@ def plot_deepwalk_embeddings():
 
 
 if __name__ == '__main__':
-    nips_experiment_runner()
+    generate_karate_embedding()
+    # nips_experiment_runner()
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'
