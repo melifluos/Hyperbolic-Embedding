@@ -63,6 +63,8 @@ def plot_lines_from_df(names):
         # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
         # ax.legend(bbox_to_anchor=(1.3, 1.05))
         ax = plot_error_bars(ax, means.values, errors.values)
+        ax.set_xlabel("fraction of labeled data")
+        ax.set_ylabel("macro F1")
         plt.savefig(outpath)
 
 
@@ -79,21 +81,6 @@ def plot_rfcev(rfecv, outpath):
     plt.ylabel("Cross validation score (nb of correct classifications)")
     plt.plot(range(1, len(rfecv.grid_scores_) + 1), rfecv.grid_scores_)
     plt.savefig(outpath, bbox_inches='tight')
-
-
-def plot_embedding(embedding, labels, path):
-    colours = labels
-    plt.scatter(embedding[:, 0], embedding[:, 1], c=colours, alpha=0.5)
-    vert_labs = xrange(1, len(labels) + 1)
-    for vert_lab, x, y in zip(vert_labs, embedding[:, 0], embedding[:, 1]):
-        plt.annotate(
-            vert_lab,
-            xy=(x, y), xytext=(-2, 2),
-            textcoords='offset points', ha='right', va='bottom', fontsize=8) \
-            # bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5),
-        # arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
-    plt.savefig(path)
-    plt.clf()
 
 
 def plot_embedding(embedding, labels, path):

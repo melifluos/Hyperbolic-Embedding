@@ -394,8 +394,8 @@ def plot_deepwalk_embeddings():
 
 
 if __name__ == '__main__':
-    generate_karate_embedding()
-    # nips_experiment_runner()
+    # generate_karate_embedding()
+    nips_experiment_runner()
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'

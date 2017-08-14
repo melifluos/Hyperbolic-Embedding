@@ -428,7 +428,7 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
             probs = clf.predict_proba(X_test)
             macro, micro = utils.get_metrics(y_test, probs, auc=False)
             # print('rep{0} '.format(idx), res)
-            results[idx, rep] = micro
+            results[idx, rep] = macro
     train = []
     std_error = sem(results, axis=1)
     mean = results.mean(axis=1)
@@ -436,7 +436,7 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
         clf.fit(dataset, target)
         probs = clf.predict_proba(dataset)
         macro, micro = utils.get_metrics(target, probs, auc=False)
-        train.append(micro)
+        train.append(macro)
 
     df = pd.DataFrame(data=results, index=names)
     df['mean'] = mean

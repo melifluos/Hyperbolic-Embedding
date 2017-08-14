@@ -254,93 +254,80 @@ class cust2vec():
         cos_term = tf.cos(theta_example[:, None] - theta_sample[None, :])
         return tf.squeeze(tf.multiply(cos_term, radius_term))
 
+
     def forward(self, examples, labels):
         """Build the graph for the forward pass."""
-        opts = self._options
+        # Embedding: [vocab_size, emb_dim]
         with tf.name_scope('model'):
-            init_width = 0.5 / opts.embedding_size
-            displacement = 1.0  # distance from the origin to put the points - avoids negative radius issues
-            angular_width = tf.asin(init_width / (init_width + displacement))  # approximate a box of side init_width
-            # self.r_in = tf.Variable(tf.sqrt(tf.random_uniform([opts.vocab_size]))+1.0,
-            #                    name='r_in')  # generate values in [0,1)
+            init_width = 0.5 / self.embedding_size
+            emb = np.random.uniform(low=-init_width, high=init_width,
+                                    size=(self.vocab_size, self.embedding_size)).astype(
+                np.float32)
 
-            self.r_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]),
-                                    name='r_in')  # generate values in [0,1)
+            if self.initialisation is not None:
+                self.emb = tf.Variable(self.initialisation, name="emb")
+            else:
+                self.emb = tf.Variable(
+                    tf.random_uniform(
+                        [self.vocab_size, self.embedding_size], -init_width, init_width),
+                    name="emb")
 
-            # impose a definite positivity constraint
-            # self.radius_in = tf.add(tf.nn.relu(self.r_in), tf.constant(1e-9), name='radius_in')
-            self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
-                                         name='radius_in')
+            emb_hist = tf.summary.histogram('embedding', emb)
 
-            # self.theta_in = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
+            # Softmax weight: [vocab_size, emb_dim]. Transposed.
+            self.sm_w_t = tf.Variable(
+                tf.zeros([self.vocab_size, self.embedding_size]),
+                name="sm_w_t")
 
-            self.theta_in = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]),
-                                        name='theta_in')  # angle
-
-            # self.phi_in = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size, None]),
-            #                             name='theta_in')  # angle
-
-            self.r_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]),
-                                     name='r_out')
-
-            # self.radius_out = tf.add(tf.nn.relu(self.r_out), tf.constant(1e-9), name='radius_out')
-            self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
-                                          name='radius_out')
-            # self.theta_out = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_out')
-
-            self.theta_out = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]), name='theta_out')
+            smw_hist = tf.summary.histogram('softmax weight', sm_w_t)
 
             # Softmax bias: [emb_dim].
-            self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
-
-            # Create a variable to keep track of the number of batches that have been fed to the graph
-            self.global_step = tf.Variable(0, name="global_step")
-            # smb_hist = tf.summary.histogram('softmax_bias', sm_b)
+            sm_b = tf.Variable(tf.zeros([self.vocab_size]), name="sm_b")
+            smb_hist = tf.summary.histogram('softmax bias', sm_b)
 
         with tf.name_scope('input'):
             # Nodes to compute the nce loss w/ candidate sampling.
             labels_matrix = tf.reshape(
                 tf.cast(labels,
                         dtype=tf.int64),
-                [opts.batch_size, 1])
+                [self.batch_size, 1])
 
             # Embeddings for examples: [batch_size, emb_dim]
-            example_radius = tf.nn.embedding_lookup(self.radius_in, examples)
-            example_theta = tf.nn.embedding_lookup(self.theta_in, examples)
+            example_emb = tf.nn.embedding_lookup(self.emb, examples)
+            example_hist = tf.summary.histogram('input embeddings', example_emb)
 
             # Weights for labels: [batch_size, emb_dim]
-            true_radius = tf.nn.embedding_lookup(self.radius_out, labels)
-            true_theta = tf.nn.embedding_lookup(self.theta_out, labels)
-
+            true_w = tf.nn.embedding_lookup(sm_w_t, labels)
             # Biases for labels: [batch_size, 1]
-            true_b = tf.nn.embedding_lookup(self.sm_b, labels)
+            true_b = tf.nn.embedding_lookup(sm_b, labels)
 
         with tf.name_scope('negative_samples'):
+
             # Negative sampling.
             sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
                 true_classes=labels_matrix,
                 num_true=1,
-                num_sampled=opts.num_samples,
+                num_sampled=self.num_samples,
                 unique=True,
-                range_max=opts.vocab_size,
+                range_max=self.vocab_size,
                 distortion=0.75,
-                unigrams=opts.vocab_counts.tolist()))
+                unigrams=self.unigrams))
 
-            sampled_radius = tf.nn.embedding_lookup(self.radius_out, sampled_ids)
-            sampled_theta = tf.nn.embedding_lookup(self.theta_out, sampled_ids)
-
+            # Weights for sampled ids: [num_sampled, emb_dim]
+            sampled_w = tf.nn.embedding_lookup(sm_w_t, sampled_ids)
             # Biases for sampled ids: [num_sampled, 1]
-            sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
+            sampled_b = tf.nn.embedding_lookup(sm_b, sampled_ids)
 
-            true_logits = self.inner_prod(example_radius, true_radius, example_theta, true_theta) + true_b
+            # True logits: [batch_size, 1]
+            true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
             # using the matmul.
-            sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
-
-            sampled_logits = self.tensor_inner_prod(example_radius, sampled_radius, example_theta,
-                                                    sampled_theta) + sampled_b_vec
+            sampled_b_vec = tf.reshape(sampled_b, [self.num_samples])
+            sampled_logits = tf.matmul(example_emb,
+                                       sampled_w,
+                                       transpose_b=True) + sampled_b_vec
         return true_logits, sampled_logits
 
 
@@ -371,6 +358,8 @@ def main(params):
             model.train()  # Process one epoch
         # Perform a final save.
         model.saver.save(session, params.save_path, global_step=model.global_step)
+        final_embedding = model.emb.eval()
+        final_embedding = normalize(final_embedding, norm='l2', axis=0)
         radius_in, theta_in, radius_out, theta_out = model._session.run(
             [model.radius_in, model.theta_in, model.radius_out, model.theta_out])
         emb_in = create_final_embedding(radius_in, theta_in)
