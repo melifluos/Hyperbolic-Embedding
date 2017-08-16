@@ -55,6 +55,7 @@ class cust2vec():
         self._word2id = {}
         self._id2word = []
         self.build_graph()
+        self.initialisation = None
         # self.examples
         # self.labels
 
@@ -78,18 +79,20 @@ class cust2vec():
     def sinh(self, x):
         return 0.5 * (tf.subtract(tf.exp(x), tf.exp(-x)))
 
-    def modify_grads(self, grads, radius):
+    def modify_grads(self, grads, emb):
         """
-        Divide the theta co-ord by r to get the gradient component in the theta direction. This can go wrong for r~0 so
-        we clip the gradients to be in the range [-1,1]
+        The tensor flow autograd gives us Euclidean gradients. Here we multiply by (1/4)(1-||emb||^2)^2
+        to convert to the hyperbolic gradient
         :param grads: a list of tuples of [(grads, name),...]
-        :param radius: a tensor radius
-        :return: The gradient in the theta direction ie.  1/r (df/d theta)
+        :param emb: A tensor embedding
+        :return: The hyperbolic gradient
         """
         scaled_grads = []
         for grad, name in grads:
-            temp = self.sinh(tf.nn.embedding_lookup(radius, grad.indices))
-            g = tf.divide(grad.values, temp)
+            vecs = tf.nn.embedding_lookup(emb, grad.indices)
+            norm_squared = tf.square(tf.norm(vecs, axis=0))
+            hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
+            g = tf.multiply(grad.values, hyperbolic_factor)
             # g_clip = tf.clip_by_value(g, -0.1, 0.1)
             scaled_grad = tf.IndexedSlices(g, grad.indices)
             scaled_grads.append((scaled_grad, name))
@@ -107,18 +110,19 @@ class cust2vec():
             0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
         self._lr = lr
         optimizer = tf.train.GradientDescentOptimizer(lr)
-        grads = optimizer.compute_gradients(loss, [self.sm_b, self.r_in, self.r_out])
-        theta_out_grad = optimizer.compute_gradients(loss, [self.theta_out])
-        theta_in_grad = optimizer.compute_gradients(loss, [self.theta_in])
-        self.theta_in_grad = theta_in_grad
-        self.theta_out_grad = theta_out_grad
-        modified_theta_in = self.modify_grads(theta_in_grad, self.radius_in)
-        # theta_in_clipped = tf.clip_by_value(modified_theta_in, -1, 1, name="theta_in_clipped")
-        modified_theta_out = self.modify_grads(theta_out_grad, self.radius_out)
+        sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
+        emb_grad = optimizer.compute_gradients(loss, [self.emb])
+        sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
+
+        self.emb_grad = emb_grad
+        self.sm_w_t_grad = sm_w_t_grad
+
+        modified_emb_grad = self.modify_grads(emb_grad, self.emb)
+        modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
         # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
-        self.modified_theta_in = modified_theta_in
-        self.modified_theta_out = modified_theta_out
-        gv = grads + modified_theta_in + modified_theta_out
+        self.modified_emb_grad = modified_emb_grad
+        self.modified_sm_w_t_grad = modified_sm_w_t_grad
+        gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
         self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
     def build_graph(self):
@@ -180,7 +184,7 @@ class cust2vec():
             time.sleep(opts.statistics_interval)  # Reports our progress once a while.
             (epoch, step, loss, words, lr, examples, labels, grads, mod_grads) = self._session.run(
                 [self._epoch, self.global_step, self._loss, self._words, self._lr, self.examples,
-                 self.labels, self.theta_in_grad, self.modified_theta_in])
+                 self.labels, self.emb_grad, self.sm_w_t_grad])
             assert len(examples) == opts.batch_size
             assert len(labels) == opts.batch_size
             # print('global step: ', step)
@@ -254,69 +258,67 @@ class cust2vec():
         cos_term = tf.cos(theta_example[:, None] - theta_sample[None, :])
         return tf.squeeze(tf.multiply(cos_term, radius_term))
 
-
     def forward(self, examples, labels):
         """Build the graph for the forward pass."""
         # Embedding: [vocab_size, emb_dim]
+        opts = self._options
         with tf.name_scope('model'):
-            init_width = 0.5 / self.embedding_size
+            init_width = 0.5 / opts.embedding_size
             emb = np.random.uniform(low=-init_width, high=init_width,
-                                    size=(self.vocab_size, self.embedding_size)).astype(
-                np.float32)
+                                    size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
 
-            if self.initialisation is not None:
-                self.emb = tf.Variable(self.initialisation, name="emb")
-            else:
-                self.emb = tf.Variable(
-                    tf.random_uniform(
-                        [self.vocab_size, self.embedding_size], -init_width, init_width),
-                    name="emb")
+            self.emb = tf.Variable(
+                tf.random_uniform(
+                    [opts.vocab_size, opts.embedding_size], -init_width, init_width),
+                name="emb")
 
             emb_hist = tf.summary.histogram('embedding', emb)
 
             # Softmax weight: [vocab_size, emb_dim]. Transposed.
             self.sm_w_t = tf.Variable(
-                tf.zeros([self.vocab_size, self.embedding_size]),
+                tf.zeros([opts.vocab_size, opts.embedding_size]),
                 name="sm_w_t")
 
-            smw_hist = tf.summary.histogram('softmax weight', sm_w_t)
+            # smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
 
             # Softmax bias: [emb_dim].
-            sm_b = tf.Variable(tf.zeros([self.vocab_size]), name="sm_b")
-            smb_hist = tf.summary.histogram('softmax bias', sm_b)
+            self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
+            smb_hist = tf.summary.histogram('softmax bias', self.sm_b)
+
+            # Create a variable to keep track of the number of batches that have been fed to the graph
+            self.global_step = tf.Variable(0, name="global_step")
 
         with tf.name_scope('input'):
             # Nodes to compute the nce loss w/ candidate sampling.
             labels_matrix = tf.reshape(
                 tf.cast(labels,
                         dtype=tf.int64),
-                [self.batch_size, 1])
+                [opts.batch_size, 1])
 
             # Embeddings for examples: [batch_size, emb_dim]
             example_emb = tf.nn.embedding_lookup(self.emb, examples)
             example_hist = tf.summary.histogram('input embeddings', example_emb)
 
             # Weights for labels: [batch_size, emb_dim]
-            true_w = tf.nn.embedding_lookup(sm_w_t, labels)
+            true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
             # Biases for labels: [batch_size, 1]
-            true_b = tf.nn.embedding_lookup(sm_b, labels)
+            true_b = tf.nn.embedding_lookup(self.sm_b, labels)
 
         with tf.name_scope('negative_samples'):
-
             # Negative sampling.
             sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
                 true_classes=labels_matrix,
                 num_true=1,
-                num_sampled=self.num_samples,
+                num_sampled=opts.num_samples,
                 unique=True,
-                range_max=self.vocab_size,
+                range_max=opts.vocab_size,
                 distortion=0.75,
-                unigrams=self.unigrams))
+                unigrams=opts.vocab_counts.tolist()))
 
             # Weights for sampled ids: [num_sampled, emb_dim]
-            sampled_w = tf.nn.embedding_lookup(sm_w_t, sampled_ids)
+            sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
             # Biases for sampled ids: [num_sampled, 1]
-            sampled_b = tf.nn.embedding_lookup(sm_b, sampled_ids)
+            sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
             # True logits: [batch_size, 1]
             true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
@@ -324,7 +326,7 @@ class cust2vec():
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
             # using the matmul.
-            sampled_b_vec = tf.reshape(sampled_b, [self.num_samples])
+            sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
             sampled_logits = tf.matmul(example_emb,
                                        sampled_w,
                                        transpose_b=True) + sampled_b_vec
@@ -357,13 +359,7 @@ def main(params):
             print('running epoch {}'.format(training_epoch + 1))
             model.train()  # Process one epoch
         # Perform a final save.
-        model.saver.save(session, params.save_path, global_step=model.global_step)
-        final_embedding = model.emb.eval()
-        final_embedding = normalize(final_embedding, norm='l2', axis=0)
-        radius_in, theta_in, radius_out, theta_out = model._session.run(
-            [model.radius_in, model.theta_in, model.radius_out, model.theta_out])
-        emb_in = create_final_embedding(radius_in, theta_in)
-        emb_out = create_final_embedding(radius_out, theta_out)
+        emb_in, emb_out = model._session.run([model.emb, model.sm_w_t])
 
     def sort_by_idx(embedding, reverse_index):
         """
@@ -378,6 +374,8 @@ def main(params):
 
     sorted_emb_in = sort_by_idx(emb_in, model._id2word)
     sorted_emb_out = sort_by_idx(emb_out, model._id2word)
+
+    # final_embedding = normalize(final_embedding, norm='l2', axis=0)
 
     return sorted_emb_in, sorted_emb_out
 
@@ -450,8 +448,9 @@ def karate_test_scenario(deepwalk_path):
 
 
 def karate_embedding_scenario():
-    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
-    # walks = pd.read_csv('../../local_resources/karate/walks1_len10_p1_q1.csv', header=None).values
+    import visualisation
+    walk_path = '../../local_resources/karate/walks_n1_l10.csv'
+    # walks = pd.read_csv('../../local_resources/karate/walks_n1_l10.csv', header=None).values
     x_path = '../../local_resources/karate/X.p'
     y_path = '../../local_resources/karate/y.p'
 
@@ -487,24 +486,24 @@ def generate_karate_embedding():
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/run4/'
-    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
+    walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
                     statistics_interval=0.1,
                     initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
 
-    path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
+    path = '../../local_resources/hyperbolic_embeddings/tf_Win' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out = main(params)
     visualisation.plot_poincare_embedding(embedding_in, y,
-                                          '../../results/karate/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
+                                          '../../results/karate/figs/poincare_Win' + '_' + utils.get_timestamp() + '.pdf')
     visualisation.plot_poincare_embedding(embedding_out, y,
-                                          '../../results/karate/figs/poincare_polar_Wout' + '_' + utils.get_timestamp() + '.pdf')
+                                          '../../results/karate/figs/poincare_Wout' + '_' + utils.get_timestamp() + '.pdf')
     df_in = pd.DataFrame(data=embedding_in, index=range(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
     df_out.to_csv(
-        '../../local_resources/hyperbolic_embeddings/tf_Wout_polar' + '_' + utils.get_timestamp() + '.csv',
+        '../../local_resources/hyperbolic_embeddings/tf_Wout' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
     return path
 

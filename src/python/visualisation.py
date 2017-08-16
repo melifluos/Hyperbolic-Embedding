@@ -85,6 +85,7 @@ def plot_rfcev(rfecv, outpath):
 
 def plot_embedding(embedding, labels, path):
     colours = labels
+
     plt.scatter(embedding[:, 0], embedding[:, 1], c=colours, alpha=0.4)
     vert_labs = xrange(1, len(labels) + 1)
     for vert_lab, x, y in zip(vert_labs, embedding[:, 0], embedding[:, 1]):

@@ -461,8 +461,8 @@ def karate_test_scenario(deepwalk_path):
 
 
 def karate_embedding_scenario():
-    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
-    # walks = pd.read_csv('../../local_resources/karate/walks1_len10_p1_q1.csv', header=None).values
+    walk_path = '../../local_resources/karate/walks_n1_l10.csv'
+    # walks = pd.read_csv('../../local_resources/karate/walks_n1_l10.csv', header=None).values
     x_path = '../../local_resources/karate/X.p'
     y_path = '../../local_resources/karate/y.p'
 
@@ -498,7 +498,7 @@ def generate_karate_embedding():
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/run4/'
-    walk_path = '../../local_resources/karate/walks1_len10_p1_q1.csv'
+    walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
                     statistics_interval=0.1,
