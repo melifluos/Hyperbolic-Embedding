@@ -94,22 +94,40 @@ class cust2vec():
             hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
             g = tf.multiply(grad.values, hyperbolic_factor)
             # g_clip = tf.clip_by_value(g, -0.1, 0.1)
-            scaled_grad = tf.IndexedSlices(g, grad.indices)
+            scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
             scaled_grads.append((scaled_grad, name))
         # scaled_theta_grad = [(tf.clip_by_value(tf.scatter_div(g, g.indices, radius), -1, 1), v) for g, v in grads]
         return scaled_grads
+
+    def clip_tensor_norms(self, emb, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        norms = tf.norm(emb, axis=1)
+        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        norm = tf.nn.l2_normalize(emb, dim=1) - epsilon
+        conditional_assignment_op = emb.assign(tf.where(comparison, norm, emb))
+        return conditional_assignment_op
 
     def optimize(self, loss):
         """Build the graph to optimize the loss function."""
 
         # Optimizer nodes.
         # Linear learning rate decay.
+        epsilon = 1e-5
         opts = self._options
         words_to_train = float(opts.words_per_epoch * opts.epochs_to_train)
         lr = opts.learning_rate * tf.maximum(
             0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
         self._lr = lr
         optimizer = tf.train.GradientDescentOptimizer(lr)
+        # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
+        # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
+        # clip the vectors back inside the Poincare ball
+        self.clip_tensor_norms(self.emb)
+        self.clip_tensor_norms(self.sm_w_t)
         sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
         emb_grad = optimizer.compute_gradients(loss, [self.emb])
         sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
@@ -279,7 +297,7 @@ class cust2vec():
                 tf.zeros([opts.vocab_size, opts.embedding_size]),
                 name="sm_w_t")
 
-            # smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
+            smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
 
             # Softmax bias: [emb_dim].
             self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
@@ -485,11 +503,11 @@ def generate_karate_embedding():
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
-    log_path = '../../local_resources/tf_logs/run4/'
+    log_path = '../../local_resources/tf_logs/hyperbolic_cartesian'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
-                    statistics_interval=0.1,
+                    statistics_interval=0.0001,
                     initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win' + '_' + utils.get_timestamp() + '.csv'

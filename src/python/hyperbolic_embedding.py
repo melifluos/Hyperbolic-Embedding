@@ -91,7 +91,7 @@ class cust2vec():
             temp = self.sinh(tf.nn.embedding_lookup(radius, grad.indices))
             g = tf.divide(grad.values, temp)
             # g_clip = tf.clip_by_value(g, -0.1, 0.1)
-            scaled_grad = tf.IndexedSlices(g, grad.indices)
+            scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
             scaled_grads.append((scaled_grad, name))
         # scaled_theta_grad = [(tf.clip_by_value(tf.scatter_div(g, g.indices, radius), -1, 1), v) for g, v in grads]
         return scaled_grads
@@ -107,18 +107,34 @@ class cust2vec():
             0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
         self._lr = lr
         optimizer = tf.train.GradientDescentOptimizer(lr)
-        grads = optimizer.compute_gradients(loss, [self.sm_b, self.r_in, self.r_out])
+        # grads = optimizer.compute_gradients(loss, [self.sm_b, self.r_in, self.r_out])
+        sm_b_grad, radius_in_grad, radius_out_grad = optimizer.compute_gradients(loss, [self.sm_b, self.radius_in,
+                                                                                        self.radius_out])
+        sm_b_grad_hist = tf.summary.histogram('sm_b_grad', sm_b_grad[0])
+        radius_in_grad_hist = tf.summary.histogram('radius_in_grad', radius_in_grad[0])
+        radius_out_grad_hist = tf.summary.histogram('radius_out_grad', radius_out_grad[0])
+
+
         theta_out_grad = optimizer.compute_gradients(loss, [self.theta_out])
         theta_in_grad = optimizer.compute_gradients(loss, [self.theta_in])
         self.theta_in_grad = theta_in_grad
         self.theta_out_grad = theta_out_grad
+        theta_in_grad_hist = tf.summary.histogram('theta_in_grad', theta_in_grad[0][0])
+        theta_out_grad_hist = tf.summary.histogram('theta_out_grad', theta_out_grad[0][0])
+        print(theta_in_grad[0][0])
+        print(theta_out_grad[0][0])
+
         modified_theta_in = self.modify_grads(theta_in_grad, self.radius_in)
         # theta_in_clipped = tf.clip_by_value(modified_theta_in, -1, 1, name="theta_in_clipped")
         modified_theta_out = self.modify_grads(theta_out_grad, self.radius_out)
+        print(modified_theta_in[0][0])
+        print(modified_theta_out[0][0])
+        modified_theta_in_grad_hist = tf.summary.histogram('modified_theta_in_grad', modified_theta_in[0][0])
+        modified_theta_out_grad_hist = tf.summary.histogram('modified_theta_out_grad', modified_theta_out[0][0])
         # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
         self.modified_theta_in = modified_theta_in
         self.modified_theta_out = modified_theta_out
-        gv = grads + modified_theta_in + modified_theta_out
+        gv = [sm_b_grad] + [radius_in_grad] + [radius_out_grad] + modified_theta_in + modified_theta_out
         self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
     def build_graph(self):
@@ -271,11 +287,13 @@ class cust2vec():
             # self.radius_in = tf.add(tf.nn.relu(self.r_in), tf.constant(1e-9), name='radius_in')
             self.radius_in = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
                                          name='radius_in')
+            radius_in_hist = tf.summary.histogram('radius_in', self.radius_in)
 
             # self.theta_in = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_in')  # angle
 
             self.theta_in = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]),
                                         name='theta_in')  # angle
+            theta_in_hist = tf.summary.histogram('theta_in', self.theta_in)
 
             # self.phi_in = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size, None]),
             #                             name='theta_in')  # angle
@@ -286,16 +304,18 @@ class cust2vec():
             # self.radius_out = tf.add(tf.nn.relu(self.r_out), tf.constant(1e-9), name='radius_out')
             self.radius_out = tf.Variable(2 * init_width * tf.random_uniform([opts.vocab_size]) + displacement,
                                           name='radius_out')
+            radius_out_hist = tf.summary.histogram('radius_out', self.radius_out)
             # self.theta_out = tf.Variable(np.pi / 10.0 * tf.random_uniform([opts.vocab_size]), name='theta_out')
 
             self.theta_out = tf.Variable(angular_width * tf.random_uniform([opts.vocab_size]), name='theta_out')
+            theta_out_hist = tf.summary.histogram('theta_out', self.theta_out)
 
             # Softmax bias: [emb_dim].
             self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
+            sm_b_his = tf.summary.histogram('sm_b', self.sm_b)
 
             # Create a variable to keep track of the number of batches that have been fed to the graph
             self.global_step = tf.Variable(0, name="global_step")
-            # smb_hist = tf.summary.histogram('softmax_bias', sm_b)
 
         with tf.name_scope('input'):
             # Nodes to compute the nce loss w/ candidate sampling.
@@ -497,11 +517,11 @@ def generate_karate_embedding():
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
-    log_path = '../../local_resources/tf_logs/run4/'
+    log_path = '../../local_resources/tf_logs/polar/'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
-                    statistics_interval=0.1,
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=0.00001,
                     initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
