@@ -129,11 +129,14 @@ class cust2vec():
         modified_theta_out = self.modify_grads(theta_out_grad, self.radius_out)
         print(modified_theta_in[0][0])
         print(modified_theta_out[0][0])
+        # modified_theta_in = theta_in_grad
+        # modified_theta_out = theta_out_grad
         modified_theta_in_grad_hist = tf.summary.histogram('modified_theta_in_grad', modified_theta_in[0][0])
         modified_theta_out_grad_hist = tf.summary.histogram('modified_theta_out_grad', modified_theta_out[0][0])
         # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
         self.modified_theta_in = modified_theta_in
         self.modified_theta_out = modified_theta_out
+
         gv = [sm_b_grad] + [radius_in_grad] + [radius_out_grad] + modified_theta_in + modified_theta_out
         self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
@@ -259,11 +262,11 @@ class cust2vec():
 
     def tensor_inner_prod(self, r_example, r_sample, theta_example, theta_sample):
         """
-        Calculate the inner product between the examples and the negative samples
-        :param r_example:
-        :param r_sample:
-        :param theta_example:
-        :param theta_sample:
+        Calculate the inner product between the examples and the negative samples using broadcasting
+        :param r_example: the input radius
+        :param r_sample: the negative samples of the output radius
+        :param theta_example: the input angle
+        :param theta_sample: the negative samples of the output angle
         :return:
         """
         radius_term = tf.multiply(r_example[:, None], r_sample[None, :])
@@ -276,7 +279,7 @@ class cust2vec():
         with tf.name_scope('model'):
             init_width = 0.5 / opts.embedding_size
             displacement = 1.0  # distance from the origin to put the points - avoids negative radius issues
-            angular_width = tf.asin(init_width / (init_width + displacement))  # approximate a box of side init_width
+            angular_width = tf.asin(init_width / (init_width + displacement))  # approximate a box of size init_width
             # self.r_in = tf.Variable(tf.sqrt(tf.random_uniform([opts.vocab_size]))+1.0,
             #                    name='r_in')  # generate values in [0,1)
 
@@ -517,12 +520,12 @@ def generate_karate_embedding():
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
-    log_path = '../../local_resources/tf_logs/polar/'
+    log_path = '../../local_resources/tf_logs/polar/lr1_hyp'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
-                    statistics_interval=0.00001,
-                    initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
+                    statistics_interval=0.1,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
 

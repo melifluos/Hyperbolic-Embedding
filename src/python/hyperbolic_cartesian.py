@@ -132,6 +132,10 @@ class cust2vec():
         emb_grad = optimizer.compute_gradients(loss, [self.emb])
         sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
 
+        sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0][0])
+        emb_grad_hist = tf.summary.histogram('emb_grad_grad', emb_grad[0][0])
+        sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0][0])
+
         self.emb_grad = emb_grad
         self.sm_w_t_grad = sm_w_t_grad
 
@@ -140,6 +144,10 @@ class cust2vec():
         # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
         self.modified_emb_grad = modified_emb_grad
         self.modified_sm_w_t_grad = modified_sm_w_t_grad
+
+        modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0][0])
+        modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0][0])
+
         gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
         self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
@@ -282,15 +290,15 @@ class cust2vec():
         opts = self._options
         with tf.name_scope('model'):
             init_width = 0.5 / opts.embedding_size
-            emb = np.random.uniform(low=-init_width, high=init_width,
-                                    size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
+            # emb = np.random.uniform(low=-init_width, high=init_width,
+            #                         size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
 
             self.emb = tf.Variable(
                 tf.random_uniform(
                     [opts.vocab_size, opts.embedding_size], -init_width, init_width),
                 name="emb")
 
-            emb_hist = tf.summary.histogram('embedding', emb)
+            emb_hist = tf.summary.histogram('embedding', self.emb)
 
             # Softmax weight: [vocab_size, emb_dim]. Transposed.
             self.sm_w_t = tf.Variable(
@@ -315,7 +323,7 @@ class cust2vec():
 
             # Embeddings for examples: [batch_size, emb_dim]
             example_emb = tf.nn.embedding_lookup(self.emb, examples)
-            example_hist = tf.summary.histogram('input embeddings', example_emb)
+            # example_hist = tf.summary.histogram('input embeddings', example_emb)
 
             # Weights for labels: [batch_size, emb_dim]
             true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
@@ -503,12 +511,12 @@ def generate_karate_embedding():
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
-    log_path = '../../local_resources/tf_logs/hyperbolic_cartesian'
+    log_path = '../../local_resources/tf_logs/hyperbolic_cartesian/lr1'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=30, skip_window=5, num_pairs=1500,
-                    statistics_interval=0.0001,
-                    initial_learning_rate=10.0, save_path=log_path, epochs=1, concurrent_steps=1)
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=0.1,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win' + '_' + utils.get_timestamp() + '.csv'
 
