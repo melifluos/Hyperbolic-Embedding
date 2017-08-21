@@ -27,6 +27,7 @@ import time
 import run_detectors
 import os
 import hyperbolic_embedding as HE
+import hyperbolic_cartesian as HCE
 import polar_embedding as PE
 import multilabel_detectors as MLD
 
@@ -188,9 +189,9 @@ def generate_blogcatalog_embedding():
     s = datetime.datetime.now()
     y_path = '../../local_resources/blogcatalog/y.p'
     y = utils.read_pickle(y_path)
-    log_path = '../../local_resources/tf_logs/run1/'
+    log_path = '../../local_resources/tf_logs/blogcatalog_polar/'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
-    size = 2  # dimensionality of the embedding
+    size = 128  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
                     initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=16)
@@ -210,6 +211,36 @@ def generate_blogcatalog_embedding():
         '../../local_resources/blogcatalog/embeddings/Wout' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
     print('blogcatalog embedding generated in: ', datetime.datetime.now() - s)
+    return path
+
+
+def generate_blogcatalog_cartesian_embedding():
+    import visualisation
+    s = datetime.datetime.now()
+    y_path = '../../local_resources/blogcatalog/y.p'
+    y = utils.read_pickle(y_path)
+    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/'
+    walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
+    size = 128  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=10.0,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=16)
+
+    path = '../../local_resources/blogcatalog/embeddings/Win_cartesian' + '_' + utils.get_timestamp() + '.csv'
+
+    embedding_in, embedding_out = HCE.main(params)
+
+    visualisation.plot_poincare_embedding(embedding_in, y,
+                                          '../../results/blogcatalog/figs/poincare_Win_cartesian' + '_' + utils.get_timestamp() + '.pdf')
+    visualisation.plot_poincare_embedding(embedding_out, y,
+                                          '../../results/blogcatalog/figs/poincare_Wout_cartesian' + '_' + utils.get_timestamp() + '.pdf')
+    df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
+    df_in.to_csv(path, sep=',')
+    df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
+    df_out.to_csv(
+        '../../local_resources/blogcatalog/embeddings/Wout_cartesian' + '_' + utils.get_timestamp() + '.csv',
+        sep=',')
+    print('blogcatalog cartesian embedding generated in: ', datetime.datetime.now() - s)
     return path
 
 
@@ -395,7 +426,7 @@ def plot_deepwalk_embeddings():
 
 if __name__ == '__main__':
     # generate_karate_embedding()
-    nips_experiment_runner()
+    # nips_experiment_runner()
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'
@@ -413,6 +444,6 @@ if __name__ == '__main__':
     # generate_blogcatalog_embedding()
     # visualise_embedding()
     # generate_blogcatalog_embedding_small()
-    # path = generate_blogcatalog_embedding()
-    # MLD.blogcatalog_scenario(path)
+    path = generate_blogcatalog_cartesian_embedding()
+    MLD.blogcatalog_scenario(path)
     # karate_test_scenario('../../local_resources/blogcatalog/embeddings/Win_20170515-113351.csv')

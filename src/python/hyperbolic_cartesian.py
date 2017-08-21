@@ -116,40 +116,41 @@ class cust2vec():
 
         # Optimizer nodes.
         # Linear learning rate decay.
-        epsilon = 1e-5
-        opts = self._options
-        words_to_train = float(opts.words_per_epoch * opts.epochs_to_train)
-        lr = opts.learning_rate * tf.maximum(
-            0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
-        self._lr = lr
-        optimizer = tf.train.GradientDescentOptimizer(lr)
-        # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
-        # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
-        # clip the vectors back inside the Poincare ball
-        self.clip_tensor_norms(self.emb)
-        self.clip_tensor_norms(self.sm_w_t)
-        sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
-        emb_grad = optimizer.compute_gradients(loss, [self.emb])
-        sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
+        with tf.name_scope('optimize'):
+            epsilon = 1e-5
+            opts = self._options
+            words_to_train = float(opts.words_per_epoch * opts.epochs_to_train)
+            lr = opts.learning_rate * tf.maximum(
+                0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
+            self._lr = lr
+            optimizer = tf.train.GradientDescentOptimizer(lr)
+            # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
+            # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
+            # clip the vectors back inside the Poincare ball
+            self.clip_tensor_norms(self.emb)
+            self.clip_tensor_norms(self.sm_w_t)
+            sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
+            emb_grad = optimizer.compute_gradients(loss, [self.emb])
+            sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
 
-        sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0][0])
-        emb_grad_hist = tf.summary.histogram('emb_grad_grad', emb_grad[0][0])
-        sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0][0])
+            sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0][0])
+            emb_grad_hist = tf.summary.histogram('emb_grad_grad', emb_grad[0][0])
+            sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0][0])
 
-        self.emb_grad = emb_grad
-        self.sm_w_t_grad = sm_w_t_grad
+            self.emb_grad = emb_grad
+            self.sm_w_t_grad = sm_w_t_grad
 
-        modified_emb_grad = self.modify_grads(emb_grad, self.emb)
-        modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
-        # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
-        self.modified_emb_grad = modified_emb_grad
-        self.modified_sm_w_t_grad = modified_sm_w_t_grad
+            modified_emb_grad = self.modify_grads(emb_grad, self.emb)
+            modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
+            # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
+            self.modified_emb_grad = modified_emb_grad
+            self.modified_sm_w_t_grad = modified_sm_w_t_grad
 
-        modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0][0])
-        modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0][0])
+            modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0][0])
+            modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0][0])
 
-        gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
-        self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
+            gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
+            self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
     def build_graph(self):
         """
@@ -314,7 +315,7 @@ class cust2vec():
             # Create a variable to keep track of the number of batches that have been fed to the graph
             self.global_step = tf.Variable(0, name="global_step")
 
-        with tf.name_scope('input'):
+        # with tf.name_scope('input'):
             # Nodes to compute the nce loss w/ candidate sampling.
             labels_matrix = tf.reshape(
                 tf.cast(labels,
@@ -330,7 +331,7 @@ class cust2vec():
             # Biases for labels: [batch_size, 1]
             true_b = tf.nn.embedding_lookup(self.sm_b, labels)
 
-        with tf.name_scope('negative_samples'):
+        # with tf.name_scope('negative_samples'):
             # Negative sampling.
             sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
                 true_classes=labels_matrix,
@@ -511,12 +512,12 @@ def generate_karate_embedding():
     y_path = '../../local_resources/karate/y.p'
     targets = utils.read_pickle(y_path)
     y = np.array(targets['cat'])
-    log_path = '../../local_resources/tf_logs/hyperbolic_cartesian/lr1'
+    log_path = '../../local_resources/tf_logs/hyperbolic_cartesian/lr1_epoch1_dim4'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
-    size = 2  # dimensionality of the embedding
+    size = 4  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.1,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=1, concurrent_steps=1)
+                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=1)
 
     path = '../../local_resources/hyperbolic_embeddings/tf_Win' + '_' + utils.get_timestamp() + '.csv'
 
