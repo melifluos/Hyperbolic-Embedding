@@ -116,42 +116,16 @@ class cust2vec():
 
         # Optimizer nodes.
         # Linear learning rate decay.
-        with tf.name_scope('optimize'):
-            epsilon = 1e-5
-            opts = self._options
-            words_to_train = float(opts.words_per_epoch * opts.epochs_to_train)
-            lr = opts.learning_rate * tf.maximum(
-                0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
-            self._lr = lr
-            optimizer = tf.train.GradientDescentOptimizer(lr)
-            # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
-            # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
-            # clip the vectors back inside the Poincare ball
-            self.clip_tensor_norms(self.emb)
-            self.clip_tensor_norms(self.sm_w_t)
-            sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
-            emb_grad = optimizer.compute_gradients(loss, [self.emb])
-            sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
-
-            sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0][0])
-            emb_grad_hist = tf.summary.histogram('emb_grad', emb_grad[0][0])
-            sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0][0])
-
-            self.emb_grad = emb_grad
-            self.sm_w_t_grad = sm_w_t_grad
-
-            modified_emb_grad = self.modify_grads(emb_grad, self.emb)
-            modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
-            # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
-            self.modified_emb_grad = modified_emb_grad
-            self.modified_sm_w_t_grad = modified_sm_w_t_grad
-
-            modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0][0])
-            modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0][0])
-
-            # gv = sm_b_grad + emb_grad + sm_w_t_grad
-            gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
-            self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
+        opts = self._options
+        words_to_train = float(opts.words_per_epoch * opts.epochs_to_train)
+        lr = opts.learning_rate * tf.maximum(
+            0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
+        self._lr = lr
+        optimizer = tf.train.GradientDescentOptimizer(lr)
+        train = optimizer.minimize(loss,
+                                   global_step=self.global_step,
+                                   gate_gradients=optimizer.GATE_NONE)
+        self._train = train
 
     def build_graph(self):
         """
@@ -203,16 +177,18 @@ class cust2vec():
         workers = []
         for thread_counter in xrange(opts.concurrent_steps):
             t = threading.Thread(target=self._train_thread_body)
-            # print('starting thread: ', thread_counter)
             t.start()
             workers.append(t)
         print('running epoch: ', initial_epoch, ' on ', opts.concurrent_steps, ' threads')
         last_words, last_time, last_summary_time = initial_words, time.time(), 0
         while True:
             time.sleep(opts.statistics_interval)  # Reports our progress once a while.
-            (epoch, step, loss, words, lr, examples, labels, grads, mod_grads) = self._session.run(
+            (epoch, step, loss, words, lr, examples, labels) = self._session.run(
                 [self._epoch, self.global_step, self._loss, self._words, self._lr, self.examples,
-                 self.labels, self.emb_grad, self.sm_w_t_grad])
+                 self.labels])
+            # (epoch, step, loss, words, lr, examples, labels, grads, mod_grads) = self._session.run(
+            #     [self._epoch, self.global_step, self._loss, self._words, self._lr, self.examples,
+            #      self.labels, self.emb_grad, self.sm_w_t_grad])
             assert len(examples) == opts.batch_size
             assert len(labels) == opts.batch_size
             # print('global step: ', step)
@@ -288,76 +264,66 @@ class cust2vec():
 
     def forward(self, examples, labels):
         """Build the graph for the forward pass."""
-        # Embedding: [vocab_size, emb_dim]
         opts = self._options
-        with tf.name_scope('model'):
-            init_width = 0.5 / opts.embedding_size
-            # emb = np.random.uniform(low=-init_width, high=init_width,
-            #                         size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
+        # Declare all variables we need.
+        # Embedding: [vocab_size, emb_dim]
+        init_width = 0.5 / opts.embedding_size
+        emb = tf.Variable(
+            tf.random_uniform(
+                [opts.vocab_size, opts.embedding_size], -init_width, init_width),
+            name="emb")
+        self._emb = emb
 
-            self.emb = tf.Variable(
-                tf.random_uniform(
-                    [opts.vocab_size, opts.embedding_size], -init_width, init_width),
-                name="emb")
+        # Softmax weight: [vocab_size, embedding_size]. Transposed.
+        self.sm_w_t = tf.Variable(
+            tf.zeros([opts.vocab_size, opts.embedding_size]),
+            name="sm_w_t")
 
-            emb_hist = tf.summary.histogram('embedding', self.emb)
+        # Softmax bias: [vocab_size].
+        self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
 
-            # Softmax weight: [vocab_size, emb_dim]. Transposed.
-            self.sm_w_t = tf.Variable(
-                tf.zeros([opts.vocab_size, opts.embedding_size]),
-                name="sm_w_t")
+        # Global step: scalar, i.e., shape [].
+        self.global_step = tf.Variable(0, name="global_step")
 
-            smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
+        # Nodes to compute the nce loss w/ candidate sampling.
+        labels_matrix = tf.reshape(
+            tf.cast(labels,
+                    dtype=tf.int64),
+            [opts.batch_size, 1])
 
-            # Softmax bias: [emb_dim].
-            self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
-            smb_hist = tf.summary.histogram('softmax bias', self.sm_b)
+        # Negative sampling.
+        sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
+            true_classes=labels_matrix,
+            num_true=1,
+            num_sampled=opts.num_samples,
+            unique=True,
+            range_max=opts.vocab_size,
+            distortion=0.75,
+            unigrams=opts.vocab_counts.tolist()))
 
-            # Create a variable to keep track of the number of batches that have been fed to the graph
-            self.global_step = tf.Variable(0, name="global_step")
+        # Embeddings for examples: [batch_size, embedding_size]
+        example_emb = tf.nn.embedding_lookup(self.emb, examples)
 
-        # with tf.name_scope('input'):
-            # Nodes to compute the nce loss w/ candidate sampling.
-            labels_matrix = tf.reshape(
-                tf.cast(labels,
-                        dtype=tf.int64),
-                [opts.batch_size, 1])
+        # Weights for labels: [batch_size, embedding_size]
+        true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+        # Biases for labels: [batch_size, 1]
+        true_b = tf.nn.embedding_lookup(self.sm_b, labels)
 
-            # Embeddings for examples: [batch_size, emb_dim]
-            example_emb = tf.nn.embedding_lookup(self.emb, examples)
-            # example_hist = tf.summary.histogram('input embeddings', example_emb)
+        # Weights for sampled ids: [num_sampled, embedding_size]
+        sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+        # Biases for sampled ids: [num_sampled, 1]
+        sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
-            # Weights for labels: [batch_size, emb_dim]
-            true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
-            # Biases for labels: [batch_size, 1]
-            true_b = tf.nn.embedding_lookup(self.sm_b, labels)
+        # True logits: [batch_size, 1]
+        true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
 
-        # with tf.name_scope('negative_samples'):
-            # Negative sampling.
-            sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
-                true_classes=labels_matrix,
-                num_true=1,
-                num_sampled=opts.num_samples,
-                unique=True,
-                range_max=opts.vocab_size,
-                distortion=0.75,
-                unigrams=opts.vocab_counts.tolist()))
-
-            # Weights for sampled ids: [num_sampled, emb_dim]
-            sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
-            # Biases for sampled ids: [num_sampled, 1]
-            sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
-
-            # True logits: [batch_size, 1]
-            true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
-
-            # Sampled logits: [batch_size, num_sampled]
-            # We replicate sampled noise labels for all examples in the batch
-            # using the matmul.
-            sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
-            sampled_logits = tf.matmul(example_emb,
-                                       sampled_w,
-                                       transpose_b=True) + sampled_b_vec
+        # Sampled logits: [batch_size, num_sampled]
+        # We replicate sampled noise labels for all examples in the batch
+        # using the matmul.
+        sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
+        sampled_logits = tf.matmul(example_emb,
+                                   sampled_w,
+                                   transpose_b=True) + sampled_b_vec
         return true_logits, sampled_logits
 
 
@@ -387,7 +353,7 @@ def main(params):
             print('running epoch {}'.format(training_epoch + 1))
             model.train()  # Process one epoch
         # Perform a final save.
-        emb_in, emb_out = model._session.run([model.emb, model.sm_w_t])
+        emb_in, emb_out = model._session.run([model._emb, model.sm_w_t])
 
     def sort_by_idx(embedding, reverse_index):
         """

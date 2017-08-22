@@ -30,6 +30,8 @@ import hyperbolic_embedding as HE
 import hyperbolic_cartesian as HCE
 import polar_embedding as PE
 import multilabel_detectors as MLD
+import euclidean_cartesian as EC
+
 
 classifiers = [
     LogisticRegression(multi_class='multinomial', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8)]
@@ -94,7 +96,7 @@ def karate_test_scenario(deepwalk_path):
 
     names = [['deepwalk'], ['logistic']]
 
-    x_deepwalk = pd.read_csv(deepwalk_path, index_col=0)
+    x_deepwalk = pd.read_csv(deepwalk_path, header=None, index_col=0, skiprows=1, sep=" ")
     # all_features = np.concatenate((x.toarray(), x_deepwalk), axis=1)
     X = [x_deepwalk.values, normalize(x, axis=0)]
     n_folds = 10
@@ -219,12 +221,12 @@ def generate_blogcatalog_cartesian_embedding():
     s = datetime.datetime.now()
     y_path = '../../local_resources/blogcatalog/y.p'
     y = utils.read_pickle(y_path)
-    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/'
+    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/2d'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
-    size = 128  # dimensionality of the embedding
+    size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
-                    statistics_interval=10.0,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=16)
+                    statistics_interval=1.0,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=16)
 
     path = '../../local_resources/blogcatalog/embeddings/Win_cartesian' + '_' + utils.get_timestamp() + '.csv'
 
@@ -244,7 +246,7 @@ def generate_blogcatalog_cartesian_embedding():
     return path
 
 
-def run_embedding(folder, run_scenario=True):
+def run_embedding(folder, run_scenario=True, module=HE):
     import visualisation
     s = datetime.datetime.now()
     y_path = '../../local_resources/{}/y.p'.format(folder)
@@ -259,7 +261,7 @@ def run_embedding(folder, run_scenario=True):
 
     path = '../../local_resources/{0}/embeddings/Win_{1}.csv'.format(folder, utils.get_timestamp())
 
-    embedding_in, embedding_out = HE.main(params)
+    embedding_in, embedding_out = module.main(params)
 
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/{0}/figs/poincare_polar_Win_{1}.pdf'.format(folder,
@@ -298,6 +300,41 @@ def generate_blogcatalog_embedding_small():
     path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out = HE.main(params)
+
+    visualisation.plot_poincare_embedding(embedding_in, y,
+                                          '../../results/blogcatalog/figs/small_poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
+    visualisation.plot_poincare_embedding(embedding_out, y,
+                                          '../../results/blogcatalog/figs/poincare_polar_Wout' + '_' + utils.get_timestamp() + '.pdf')
+    df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
+    df_in.to_csv(path, sep=',')
+    df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
+    df_out.to_csv(
+        '../../local_resources/blogcatalog/embeddings/Wout' + '_' + utils.get_timestamp() + '.csv',
+        sep=',')
+    print('blogcatalog embedding generated in: ', datetime.datetime.now() - s)
+    MLD.blogcatalog_scenario(path)
+    return path
+
+
+def generate_blogcatalog_cartesian_embedding_small():
+    """
+    Uses one walk of length 10 per vertex.
+    :return:
+    """
+    import visualisation
+    s = datetime.datetime.now()
+    y_path = '../../local_resources/blogcatalog/y.p'
+    y = utils.read_pickle(y_path)
+    log_path = '../../local_resources/tf_logs/blogcatalog_small/128D'
+    walk_path = '../../local_resources/blogcatalog/walks_n1_l10.csv'
+    size = 128  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=1.0,
+                    initial_learning_rate=0.1, save_path=log_path, epochs=5, concurrent_steps=4)
+
+    path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
+
+    embedding_in, embedding_out = HCE.main(params)
 
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/blogcatalog/figs/small_poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
@@ -395,18 +432,25 @@ def visualise_deepwalk(emb_path, ypath, outfolder):
     visualisation.plot_deepwalk_embedding(embedding, y, outpath)
 
 
-def nips_experiment_runner():
+def generate_nips_deepwalk_embeddings():
+    names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
+
+
+def nips_experiment_runner(module):
     names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
     # names = ['polbooks']
     # names = ['political_blogs', 'karate']
 
     for name in names:
-        embedding_path = run_embedding(name, run_scenario=False)
+        embedding_path = run_embedding(name, run_scenario=False, module=module)
         mean_path = '../../results/all/{}_means.csv'.format(name)
         error_path = '../../results/all/{}_errors.csv'.format(name)
         means, errors = MLD.run_test_train_split_scenario(name, embedding_path)
         means.to_csv(mean_path)
         errors.to_csv(error_path)
+
+    from visualisation import plot_lines_from_df
+    plot_lines_from_df(names)
 
 
 def plot_deepwalk_embeddings():
@@ -424,9 +468,55 @@ def plot_deepwalk_embeddings():
         visualise_deepwalk(emb_path, ypath, outfolder)
 
 
+def karate_deepwalk_grid_scenario():
+    """
+    evaluates a grid of embeddings at different sizes, walk lengths and walks per vertex for the karate network.
+    Trying to understand why the DeepWalk performance was so poor.
+    :return:
+    """
+    import os
+    y_path = '../../local_resources/karate/y.p'
+    x_path = '../../local_resources/karate/X.p'
+
+    target = utils.read_target(y_path)
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    folder = '../../local_resources/karate/gridsearch/'
+    names = [[elem] for elem in os.listdir(folder)]
+
+    embeddings = []
+    for name in names:
+        emb = pd.read_csv(folder + name[0], header=None, index_col=0, skiprows=1, sep=" ")
+        emb.sort_index(inplace=True)
+        embeddings.append(emb.values)
+
+    names.append(['hyperbolic'])
+    hyp_path = '../../local_resources/karate/embeddings/Win_20170808-185202.csv'
+    hyp_emb = pd.read_csv(hyp_path, index_col=0)
+    embeddings.append(hyp_emb.values)
+
+    n_folds = 10
+    results = run_detectors.run_all_datasets(embeddings, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    tests[0].to_csv('../../results/karate/pvalues' + utils.get_timestamp() + '.csv')
+    tests[1].to_csv('../../results/karate/pvalues' + utils.get_timestamp() + '.csv')
+    print('macro', results[0])
+    print('micro', results[1])
+    macro_path = '../../results/karate/macro' + utils.get_timestamp() + '.csv'
+    micro_path = '../../results/karate/micro' + utils.get_timestamp() + '.csv'
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+
+
 if __name__ == '__main__':
+    karate_deepwalk_grid_scenario()
+    # deepwalk_path = '../../local_resources/karate/karate128.emd'
+    # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    # nips_experiment_runner()
+    # nips_experiment_runner(module=HCE)
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'
@@ -444,6 +534,6 @@ if __name__ == '__main__':
     # generate_blogcatalog_embedding()
     # visualise_embedding()
     # generate_blogcatalog_embedding_small()
-    path = generate_blogcatalog_cartesian_embedding()
-    MLD.blogcatalog_scenario(path)
+    # path = generate_blogcatalog_cartesian_embedding_small()
+    # MLD.blogcatalog_scenario(path)
     # karate_test_scenario('../../local_resources/blogcatalog/embeddings/Win_20170515-113351.csv')

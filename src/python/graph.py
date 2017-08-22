@@ -14,11 +14,12 @@ class Graph:
     A binary graph
     """
 
-    def __init__(self, adj):
+    def __init__(self, adj, shuffle_walks=True):
         self.adj = adj.tocsr()
         self.deg = np.array(adj.sum(axis=1), dtype=int).squeeze()
         self.n_vertices = self.deg.shape[0]
         self.edges = np.zeros(shape=(self.n_vertices, max(self.deg)), dtype=int)
+        self.shuffle_walks = shuffle_walks
 
     def build_edge_array(self):
         """
@@ -63,7 +64,8 @@ class Graph:
         initial_vertices = np.arange(self.n_vertices)
         walks = np.zeros(shape=(self.n_vertices * num_walks, walk_length), dtype=int)
         walk_starts = np.tile(initial_vertices, num_walks)
-        np.random.shuffle(walk_starts)
+        if self.shuffle_walks:  # this improves SGD convergence, but is inconvenient for slicing the walks
+            np.random.shuffle(walk_starts)
         walks[:, 0] = walk_starts
         return walks
 
@@ -225,7 +227,39 @@ def generate_multiple_walks_and_embeddings():
             g.learn_embeddings(walks, size, emdpath)
 
 
+def karate_deepwalk_gridsearch():
+    """
+    A function to double check the results. They seem to good and I'm worried that I messed up the DeepWalk bit somehow.
+    There should be at least some configurations where DeepWalk does well.
+    :return:
+    """
+    stub = '../../local_resources/karate'
+    ypath = stub + '/y.p'
+    xpath = stub + '/X.p'
+    walk_lengths = [10, 40, 70]
+    n_walks = [1, 5, 10]
+    sizes = [2, 8, 32, 128]
+
+    # walkpath = stub + name + '/walks_n1_l10.csv'
+    x, y = utils.read_data(xpath, ypath, 0)
+    g = Graph(x, shuffle_walks=False)
+    n_vertices = len(y)
+    print 'building edges'
+    g.build_edge_array()
+    print 'generating walks'
+    all_walks = g.generate_walks(10, 70)
+    print all_walks.shape
+
+    for walk_length in walk_lengths:
+        walks = all_walks[:, 0:walk_length]
+        for n in n_walks:
+            walks = walks[0:n_vertices * n, :]
+            for size in sizes:
+                emdpath = '{}/gridsearch/size_{}_nwalks_{}_walklen_{}.emd'.format(stub, size, n, walk_length)
+                g.learn_embeddings(walks, size, emdpath)
+
+
 if __name__ == '__main__':
     s = datetime.now()
-    generate_multiple_walks_and_embeddings()
+    karate_deepwalk_gridsearch()
     print datetime.now() - s, ' s'

@@ -480,18 +480,6 @@ def run_test_train_split_scenario(folder, embedding_path):
     print errors
     return means, errors
 
-    # all_results = utils.merge_results(results, nreps)
-    # results, tests = utils.stats_test(all_results)
-    #
-    # tests[0].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
-    # tests[1].to_csv('../../results/{0}/pvalues{1}.csv'.format(folder, utils.get_timestamp()))
-    # print('macro', results[0])
-    # print('micro', results[1])
-    # macro_path = '../../results/{0}/macro{1}.csv'.format(folder, utils.get_timestamp())
-    # micro_path = '../../results/{0}/micro{1}.csv'.format(folder, utils.get_timestamp())
-    # results[0].to_csv(macro_path, index=True)
-    # results[1].to_csv(micro_path, index=True)
-
 
 if __name__ == "__main__":
     s = datetime.datetime.now()

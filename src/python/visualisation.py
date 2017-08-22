@@ -54,7 +54,7 @@ def plot_lines_from_df(names):
             legend = True
         else:
             legend = False
-        outpath = '../../results/all/lineplots/{}.pdf'.format(name)
+        outpath = '../../results/all/lineplots/{}_{}.pdf'.format(name, utils.get_timestamp())
         errpath = '../../results/all/{}_errors.csv'.format(name)
         meanpath = '../../results/all/{}_means.csv'.format(name)
         errors = pd.read_csv(errpath, index_col=0).transpose()
