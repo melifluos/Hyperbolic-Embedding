@@ -67,7 +67,7 @@ def generate_karate_embedding():
                     statistics_interval=0.1,
                     initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=1)
 
-    path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
+    path = '../../local_resources/karate/embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out = HE.main(params)
 
@@ -79,13 +79,12 @@ def generate_karate_embedding():
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
     df_out.to_csv(
-        '../../local_resources/hyperbolic_embeddings/tf_Wout_polar' + '_' + utils.get_timestamp() + '.csv',
+        '../../local_resources/karate/embeddings/tf_Wout_polar' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
     return path
 
 
 def karate_test_scenario(deepwalk_path):
-    # deepwalk_path = '../../local_resources/hyperbolic_embeddings/tf_test1.csv'
 
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'
@@ -264,10 +263,10 @@ def run_embedding(folder, run_scenario=True, module=HE):
     embedding_in, embedding_out = module.main(params)
 
     visualisation.plot_poincare_embedding(embedding_in, y,
-                                          '../../results/{0}/figs/poincare_polar_Win_{1}.pdf'.format(folder,
+                                          '../../results/all/embedding_figs/{}_Win_{}.pdf'.format(folder,
                                                                                                      utils.get_timestamp()))
     visualisation.plot_poincare_embedding(embedding_out, y,
-                                          '../../results/{0}/figs/poincare_polar_Wout_{1}.pdf'.format(folder,
+                                          '../../results/all/embedding_figs/{}_Wout_{}.pdf'.format(folder,
                                                                                                       utils.get_timestamp()))
     df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
@@ -415,11 +414,6 @@ def generate_political_blogs_embedding():
     return path
 
 
-def multiple_embeddings_and_evaluation_scenario():
-    names = ['football', 'adjnoun', 'polbooks']
-    for name in names:
-        run_embedding(name)
-
 
 def visualise_deepwalk(emb_path, ypath, outfolder):
     import visualisation
@@ -437,20 +431,23 @@ def generate_nips_deepwalk_embeddings():
 
 
 def nips_experiment_runner(module):
+    """
+    runs the experiments on small graphs submitted to NIPS and MLG
+    :param module: The module for the relevant type of embeddings eg. HE for Hyperbolic Embedding
+    :return: None
+    """
+    from visualisation import plot_lines_from_df
     names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
-    # names = ['polbooks']
-    # names = ['political_blogs', 'karate']
 
     for name in names:
         embedding_path = run_embedding(name, run_scenario=False, module=module)
-        mean_path = '../../results/all/{}_means.csv'.format(name)
-        error_path = '../../results/all/{}_errors.csv'.format(name)
+        mean_path = '../../results/all/{}_means_{}.csv'.format(name, utils.get_timestamp())
+        error_path = '../../results/all/{}_errors_{}.csv'.format(name, utils.get_timestamp())
         means, errors = MLD.run_test_train_split_scenario(name, embedding_path)
         means.to_csv(mean_path)
         errors.to_csv(error_path)
-
-    from visualisation import plot_lines_from_df
-    plot_lines_from_df(names)
+        outpath = '../../results/all/lineplots/polar/{}_{}.pdf'.format(name, utils.get_timestamp())
+        plot_lines_from_df(names, means, errors, outpath)
 
 
 def plot_deepwalk_embeddings():
@@ -512,11 +509,11 @@ def karate_deepwalk_grid_scenario():
 
 
 if __name__ == '__main__':
-    karate_deepwalk_grid_scenario()
+    # karate_deepwalk_grid_scenario()
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    # nips_experiment_runner(module=HCE)
+    nips_experiment_runner(module=HE)
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'
@@ -527,7 +524,6 @@ if __name__ == '__main__':
     # x, y = utils.read_data(x_path, y_path, threshold=0)
     # run_repetitions(data, y, classifiers[0], names, reps, train_pct=0.8)
     # visualise_embedding()
-    # multiple_embeddings_and_evaluation_scenario()
     # embedding_path = '../../local_resources/political_blogs/embeddings/Win_20170517-165831.csv'
     # political_blogs_scenario(embedding_path)
     # generate_political_blogs_embedding()

@@ -47,25 +47,23 @@ def plot_error_bars(ax, data, sde):
     return ax
 
 
-def plot_lines_from_df(names):
+def plot_lines_from_df(name, means, errors, outpath):
     styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
-    for name in names:
-        if name == 'football':
-            legend = True
-        else:
-            legend = False
-        outpath = '../../results/all/lineplots/{}_{}.pdf'.format(name, utils.get_timestamp())
-        errpath = '../../results/all/{}_errors.csv'.format(name)
-        meanpath = '../../results/all/{}_means.csv'.format(name)
-        errors = pd.read_csv(errpath, index_col=0).transpose()
-        means = pd.read_csv(meanpath, index_col=0).transpose()
-        ax = means.plot(style=styles, legend=legend, kind='line')
-        # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
-        # ax.legend(bbox_to_anchor=(1.3, 1.05))
-        ax = plot_error_bars(ax, means.values, errors.values)
-        ax.set_xlabel("fraction of labeled data")
-        ax.set_ylabel("macro F1")
-        plt.savefig(outpath)
+    if name == 'football':
+        legend = True
+    else:
+        legend = False
+    # errpath = '../../results/all/{}_errors.csv'.format(name)
+    # meanpath = '../../results/all/{}_means.csv'.format(name)
+    # errors = pd.read_csv(errpath, index_col=0).transpose()
+    # means = pd.read_csv(meanpath, index_col=0).transpose()
+    ax = means.plot(style=styles, legend=legend, kind='line')
+    # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
+    # ax.legend(bbox_to_anchor=(1.3, 1.05))
+    ax = plot_error_bars(ax, means.values, errors.values)
+    ax.set_xlabel("fraction of labeled data")
+    ax.set_ylabel("macro F1")
+    plt.savefig(outpath)
 
 
 def plot_rfcev(rfecv, outpath):

@@ -243,7 +243,6 @@ def read_embeddings(paths, target_path, sizes):
 
 
 def karate_test_scenario(deepwalk_path):
-    # deepwalk_path = '../../local_resources/hyperbolic_embeddings/tf_test1.csv'
 
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'

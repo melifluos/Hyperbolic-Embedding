@@ -407,7 +407,6 @@ def karate_results(embeddings, names, n_reps, train_size):
 
 
 def karate_test_scenario(deepwalk_path):
-    # deepwalk_path = '../../local_resources/hyperbolic_embeddings/tf_test1.csv'
 
     y_path = '../../local_resources/zachary_karate/y.p'
     x_path = '../../local_resources/zachary_karate/X.p'
@@ -489,7 +488,7 @@ def generate_karate_embedding():
                     statistics_interval=0.1,
                     initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=1)
 
-    path = '../../local_resources/hyperbolic_embeddings/tf_Win_polar' + '_' + utils.get_timestamp() + '.csv'
+    path = '../../local_resources/karate/embeddings/euclidean_polar_Win' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out, reverse_index = main(params)
     embedding_in = sort_by_idx(embedding_in, reverse_index)
@@ -502,7 +501,7 @@ def generate_karate_embedding():
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
     df_out.to_csv(
-        '../../local_resources/hyperbolic_embeddings/tf_Wout_polar' + '_' + utils.get_timestamp() + '.csv',
+        '../../local_resources/karate/embeddings/euclidean_polar_Wout' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
     return path
 
