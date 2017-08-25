@@ -7,7 +7,6 @@ from __future__ import division
 from __future__ import print_function
 
 import matplotlib
-
 # Force matplotlib to not use any Xwindows backend. Needed to run on the cluster
 matplotlib.use('Agg')
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -245,7 +244,14 @@ def generate_blogcatalog_cartesian_embedding():
     return path
 
 
-def run_embedding(folder, run_scenario=True, module=HE):
+def run_embedding(folder, learning_rate, run_scenario=True, module=HE):
+    """
+    Generate an embeddings for a given graph
+    :param folder: the name of the folder and also the graph
+    :param run_scenario: True if cv results are required
+    :param module: An alias for the module containing the specific embedding
+    :return: the path to the embedding
+    """
     import visualisation
     s = datetime.datetime.now()
     y_path = '../../local_resources/{}/y.p'.format(folder)
@@ -256,7 +262,7 @@ def run_embedding(folder, run_scenario=True, module=HE):
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=4)
+                    initial_learning_rate=learning_rate, save_path=log_path, epochs=5, concurrent_steps=4)
 
     path = '../../local_resources/{0}/embeddings/Win_{1}.csv'.format(folder, utils.get_timestamp())
 
@@ -430,7 +436,7 @@ def generate_nips_deepwalk_embeddings():
     names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
 
 
-def nips_experiment_runner(module):
+def nips_experiment_runner(module, folder, learning_rate):
     """
     runs the experiments on small graphs submitted to NIPS and MLG
     :param module: The module for the relevant type of embeddings eg. HE for Hyperbolic Embedding
@@ -438,16 +444,18 @@ def nips_experiment_runner(module):
     """
     from visualisation import plot_lines_from_df
     names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
+    # names = ['karate']
 
     for name in names:
-        embedding_path = run_embedding(name, run_scenario=False, module=module)
+        embedding_path = run_embedding(name, learning_rate, run_scenario=False, module=module)
         mean_path = '../../results/all/{}_means_{}.csv'.format(name, utils.get_timestamp())
         error_path = '../../results/all/{}_errors_{}.csv'.format(name, utils.get_timestamp())
         means, errors = MLD.run_test_train_split_scenario(name, embedding_path)
         means.to_csv(mean_path)
         errors.to_csv(error_path)
-        outpath = '../../results/all/lineplots/polar/{}_{}.pdf'.format(name, utils.get_timestamp())
-        plot_lines_from_df(names, means, errors, outpath)
+        outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format(folder, name, utils.get_timestamp())
+        plot_lines_from_df(name, mean_path, error_path, outpath)
+        # plot_lines_from_df(name, means, errors, outpath)
 
 
 def plot_deepwalk_embeddings():
@@ -513,7 +521,7 @@ if __name__ == '__main__':
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    nips_experiment_runner(module=HE)
+    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.1)
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'

@@ -22,6 +22,7 @@ import scipy.stats as stats
 import datetime
 from sklearn.preprocessing import normalize
 from scipy.stats import sem
+from sklearn.model_selection import train_test_split
 
 __author__ = 'benchamberlain'
 
@@ -243,7 +244,6 @@ def read_embeddings(paths, target_path, sizes):
 
 
 def karate_test_scenario(deepwalk_path):
-
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'
 
@@ -404,37 +404,40 @@ def blogcatalog_deepwalk_node2vec():
     results[1].to_csv(micro_path, index=True)
 
 
-def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
+def run_repetitions(X, y, names, clf, reps, train_pct=0.8):
     """
     Run repeated experiments on random train test splits of the data
-    :param data: an iterable of numpy arrays
-    :param target: a numpy array of target variables
+    :param X: an iterable of numpy arrays
+    :param y: a numpy array of target variables
     :param clf: a scikit-learn classifier
     :param names: the names of the data sets. Size should match data
     :param reps: the number of repetitions to run for each dataset
     :param train_pct: the percentage of the data to use for training. The rest will be held out for the test set.
     :return:
     """
-    results = np.zeros(shape=(len(data), reps))
+    results = np.zeros(shape=(len(X), reps))
+    min_split = min(train_pct, 1 - train_pct)
+    assert len(y) * min_split > 1, 'Only {} data points is not enough for a train split of {}'.format(len(y),
+                                                                                                      train_pct)
     for rep in range(reps):
-        msk = np.random.rand(len(target)) < train_pct
-        y_train = target[msk]
-        y_test = target[~msk]
-        for idx, dataset in enumerate(data):
-            X_train = dataset[msk, :]
-            X_test = dataset[~msk, :]
+        for idx, dataset in enumerate(X):
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(dataset, y, train_size=train_pct, stratify=y)
+            except ValueError:
+                print 'could not stratify as too many classes for train percentage {}'.format(train_pct)
+                print 'performing unstratified train test split instead'
+                X_train, X_test, y_train, y_test = train_test_split(dataset, y, train_size=train_pct)
             clf.fit(X_train, y_train)
             probs = clf.predict_proba(X_test)
             macro, micro = utils.get_metrics(y_test, probs, auc=False)
-            # print('rep{0} '.format(idx), res)
             results[idx, rep] = macro
     train = []
     std_error = sem(results, axis=1)
     mean = results.mean(axis=1)
-    for idx, dataset in enumerate(data):
-        clf.fit(dataset, target)
+    for idx, dataset in enumerate(X):
+        clf.fit(dataset, y)
         probs = clf.predict_proba(dataset)
-        macro, micro = utils.get_metrics(target, probs, auc=False)
+        macro, micro = utils.get_metrics(y, probs, auc=False)
         train.append(macro)
 
     df = pd.DataFrame(data=results, index=names)
@@ -446,6 +449,12 @@ def run_repetitions(data, target, names, clf, reps, train_pct=0.8):
 
 
 def run_test_train_split_scenario(folder, embedding_path):
+    """
+    Compare the hyperbolic embeddings to DeepWalk embeddings of dimension 2-128
+    :param folder:
+    :param embedding_path:
+    :return:
+    """
     y_path = '../../local_resources/{}/y.p'.format(folder)
     x_path = '../../local_resources/{}/X.p'.format(folder)
     sizes = [2, 4, 8, 16, 32, 64, 128]
@@ -481,9 +490,17 @@ def run_test_train_split_scenario(folder, embedding_path):
 
 
 if __name__ == "__main__":
-    s = datetime.datetime.now()
-    blogcatalog_scenario_small('../../local_resources/blogcatalog/embeddings/Win_20170516-221306.csv')
-    print datetime.datetime.now() - s
+    emd_path = '../../local_resources/karate/karate2.emd'
+    x_path = '../../local_resources/karate/X.p'
+    y_path = '../../local_resources/karate/y.p'
+    X, y = utils.read_data(x_path, y_path)
+    emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
+    emdv = emd.values
+    df = run_repetitions([emdv], y, ['deepwalk'], classifiers[0], 5, train_pct=0.5)
+    print df
+    # s = datetime.datetime.now()
+    # blogcatalog_scenario_small('../../local_resources/blogcatalog/embeddings/Win_20170516-221306.csv')
+    # print datetime.datetime.now() - s
     # X, y = read_data(5)
 
     #

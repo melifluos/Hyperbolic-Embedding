@@ -47,20 +47,22 @@ def plot_error_bars(ax, data, sde):
     return ax
 
 
-def plot_lines_from_df(name, means, errors, outpath):
+def plot_lines_from_df(name, meanpath, errpath, outpath):
     styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
     if name == 'football':
         legend = True
     else:
         legend = False
+    # errors_t = errors.transpose()
+    # means_t = means.transpose()
     # errpath = '../../results/all/{}_errors.csv'.format(name)
     # meanpath = '../../results/all/{}_means.csv'.format(name)
-    # errors = pd.read_csv(errpath, index_col=0).transpose()
-    # means = pd.read_csv(meanpath, index_col=0).transpose()
-    ax = means.plot(style=styles, legend=legend, kind='line')
+    errors_t = pd.read_csv(errpath, index_col=0).transpose()
+    means_t = pd.read_csv(meanpath, index_col=0).transpose()
+    ax = means_t.plot(style=styles, legend=legend, kind='line')
     # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
     # ax.legend(bbox_to_anchor=(1.3, 1.05))
-    ax = plot_error_bars(ax, means.values, errors.values)
+    ax = plot_error_bars(ax, means_t.values, errors_t.values)
     ax.set_xlabel("fraction of labeled data")
     ax.set_ylabel("macro F1")
     plt.savefig(outpath)
@@ -95,12 +97,12 @@ def plot_embedding(embedding, labels, path):
     plt.clf()
 
 
-def plot_poincare_embedding(embedding, labels, path, annotate=True):
+def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
     :param labels: A numpy array of size (ndata, 1)
-    :param path: The path to save the figure
+    :param outpath: The path to save the figure
     :return:
     """
     # labels = np.array(labels)
@@ -141,7 +143,7 @@ def plot_poincare_embedding(embedding, labels, path, annotate=True):
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()
-    plt.savefig(path)
+    plt.savefig(outpath)
     plt.clf()
 
 
@@ -216,4 +218,11 @@ def MF_embedding_TSNE():
 
 
 if __name__ == '__main__':
-    plot_lines_from_df(['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate'])
+    emd_path = '../../local_resources/karate/karate2.emd'
+    x_path = '../../local_resources/karate/X.p'
+    y_path = '../../local_resources/karate/y.p'
+    X, y = utils.read_data(x_path, y_path)
+    emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
+    emdv = emd.values
+    outpath = '../../results/karate/karate2.pdf'
+    plot_poincare_embedding(emdv, y, outpath, annotate=True)

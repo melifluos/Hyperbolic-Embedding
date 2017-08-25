@@ -519,7 +519,7 @@ def make_one_hot(X):
     return one_hot
 
 
-def read_data(x_path, y_path, threshold):
+def read_data(x_path, y_path, threshold=0):
     """
     reads the features and target variables
     :return:
