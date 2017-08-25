@@ -286,48 +286,34 @@ class cust2vec():
         cos_term = tf.cos(theta_example[:, None] - theta_sample[None, :])
         return tf.squeeze(tf.multiply(cos_term, radius_term))
 
-    def distance_vec(self, example, samples):
+    def elementwise_distance(self, examples, labels):
         """
-        The hyperbolic distance in the Poincare ball with curvature = -1
-        :param x: A 1D tensor of shape (1, ndim)
-        :param y: A tensor of shape (nsamples, ndim)
-        :return: A tensor of shape (1, nsamples)
+        creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param labels: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        norm_square = tf.square(tf.norm(example - samples, axis=1))
-        denom2 = 1 - tf.square(tf.norm(samples, axis=1))
-        denom1 = 1 - tf.square(tf.norm(example, axis=0))
-        arg = 1 + 2 * norm_square / (denom1 * denom2)
-        return tf.acosh(arg)
+        xnorm_sq = tf.square(tf.norm(examples, axis=1))
+        ynorm_sq = tf.square(tf.norm(labels, axis=1))
+        euclidean_dist = tf.norm(examples - labels, axis=1)
+        denom = tf.multiply(1 - xnorm_sq, 1 - ynorm_sq)
+        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist, denom))
+        return hyp_dist
 
-    def distance(self, example, samples):
+    def pairwise_distance(self, examples, samples):
         """
-        The hyperbolic distance in the Poincare ball with curvature = -1
-        :param x: A 1D tensor of shape (1, ndim)
-        :param y: A tensor of shape (nsamples, ndim)
-        :return: A tensor of shape (1, nsamples)
+        creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param samples: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        norm_square = tf.square(tf.norm(example - samples, axis=0))
-        denom2 = 1 - tf.square(tf.norm(samples, axis=0))
-        denom1 = 1 - tf.square(tf.norm(example, axis=0))
-        arg = 1 + 2 * norm_square / (denom1 * denom2)
-        return tf.acosh(arg)
-
-    # def distance(self, example, samples):
-    #     """
-    #     The hyperbolic distance in the Poincare ball with curvature = -1
-    #     :param x: A 1D tensor of shape (1, ndim)
-    #     :param y: A tensor of shape (nsamples, ndim)
-    #     :return: A tensor of shape (1, nsamples)
-    #     """
-    #     if len(samples.shape) > 1:
-    #         norm_square = tf.square(tf.norm(example - samples, axis=1))
-    #         denom2 = 1 - tf.square(tf.norm(samples, axis=1))
-    #     else:
-    #         norm_square = tf.square(tf.norm(example - samples, axis=0))
-    #         denom2 = 1 - tf.square(tf.norm(samples, axis=0))
-    #     denom1 = 1 - tf.square(tf.norm(example, axis=0))
-    #     arg = 1 + 2 * norm_square / (denom1 * denom2)
-    #     return tf.acosh(arg)
+        xnorm_sq = tf.square(tf.norm(examples, axis=1))
+        ynorm_sq = tf.square(tf.norm(samples, axis=1))
+        # use the multiplied out version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
+        euclidean_dist = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
+        denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
+        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist, denom))
+        return hyp_dist
 
     def forward(self, examples, labels):
         """Build the graph for the forward pass."""
@@ -393,7 +379,7 @@ class cust2vec():
 
             # True logits: [batch_size, 1]
             # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
-            true_logits = self.distance(example_emb, true_w) + true_b
+            true_logits = self.elementwise_distance(example_emb, true_w) + true_b
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
@@ -402,7 +388,7 @@ class cust2vec():
             # sampled_logits = tf.matmul(example_emb,
             #                            sampled_w,
             #                            transpose_b=True) + sampled_b_vec
-            sampled_logits = self.distance_vec(example_emb, sampled_w) + sampled_b_vec
+            sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
         return true_logits, sampled_logits
 
 

@@ -521,7 +521,7 @@ if __name__ == '__main__':
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.1)
+    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.001)
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'
