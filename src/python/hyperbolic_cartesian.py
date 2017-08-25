@@ -286,6 +286,49 @@ class cust2vec():
         cos_term = tf.cos(theta_example[:, None] - theta_sample[None, :])
         return tf.squeeze(tf.multiply(cos_term, radius_term))
 
+    def distance_vec(self, example, samples):
+        """
+        The hyperbolic distance in the Poincare ball with curvature = -1
+        :param x: A 1D tensor of shape (1, ndim)
+        :param y: A tensor of shape (nsamples, ndim)
+        :return: A tensor of shape (1, nsamples)
+        """
+        norm_square = tf.square(tf.norm(example - samples, axis=1))
+        denom2 = 1 - tf.square(tf.norm(samples, axis=1))
+        denom1 = 1 - tf.square(tf.norm(example, axis=0))
+        arg = 1 + 2 * norm_square / (denom1 * denom2)
+        return tf.acosh(arg)
+
+    def distance(self, example, samples):
+        """
+        The hyperbolic distance in the Poincare ball with curvature = -1
+        :param x: A 1D tensor of shape (1, ndim)
+        :param y: A tensor of shape (nsamples, ndim)
+        :return: A tensor of shape (1, nsamples)
+        """
+        norm_square = tf.square(tf.norm(example - samples, axis=0))
+        denom2 = 1 - tf.square(tf.norm(samples, axis=0))
+        denom1 = 1 - tf.square(tf.norm(example, axis=0))
+        arg = 1 + 2 * norm_square / (denom1 * denom2)
+        return tf.acosh(arg)
+
+    # def distance(self, example, samples):
+    #     """
+    #     The hyperbolic distance in the Poincare ball with curvature = -1
+    #     :param x: A 1D tensor of shape (1, ndim)
+    #     :param y: A tensor of shape (nsamples, ndim)
+    #     :return: A tensor of shape (1, nsamples)
+    #     """
+    #     if len(samples.shape) > 1:
+    #         norm_square = tf.square(tf.norm(example - samples, axis=1))
+    #         denom2 = 1 - tf.square(tf.norm(samples, axis=1))
+    #     else:
+    #         norm_square = tf.square(tf.norm(example - samples, axis=0))
+    #         denom2 = 1 - tf.square(tf.norm(samples, axis=0))
+    #     denom1 = 1 - tf.square(tf.norm(example, axis=0))
+    #     arg = 1 + 2 * norm_square / (denom1 * denom2)
+    #     return tf.acosh(arg)
+
     def forward(self, examples, labels):
         """Build the graph for the forward pass."""
         # Embedding: [vocab_size, emb_dim]
@@ -316,7 +359,7 @@ class cust2vec():
             # Create a variable to keep track of the number of batches that have been fed to the graph
             self.global_step = tf.Variable(0, name="global_step")
 
-        # with tf.name_scope('input'):
+            # with tf.name_scope('input'):
             # Nodes to compute the nce loss w/ candidate sampling.
             labels_matrix = tf.reshape(
                 tf.cast(labels,
@@ -332,7 +375,7 @@ class cust2vec():
             # Biases for labels: [batch_size, 1]
             true_b = tf.nn.embedding_lookup(self.sm_b, labels)
 
-        # with tf.name_scope('negative_samples'):
+            # with tf.name_scope('negative_samples'):
             # Negative sampling.
             sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
                 true_classes=labels_matrix,
@@ -349,15 +392,17 @@ class cust2vec():
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
             # True logits: [batch_size, 1]
-            true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
+            # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
+            true_logits = self.distance(example_emb, true_w) + true_b
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
             # using the matmul.
             sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
-            sampled_logits = tf.matmul(example_emb,
-                                       sampled_w,
-                                       transpose_b=True) + sampled_b_vec
+            # sampled_logits = tf.matmul(example_emb,
+            #                            sampled_w,
+            #                            transpose_b=True) + sampled_b_vec
+            sampled_logits = self.distance_vec(example_emb, sampled_w) + sampled_b_vec
         return true_logits, sampled_logits
 
 
@@ -447,7 +492,6 @@ def karate_results(embeddings, names, n_reps, train_size):
 
 
 def karate_test_scenario(deepwalk_path):
-
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'
 
