@@ -259,7 +259,7 @@ def run_embedding(folder, learning_rate, run_scenario=True, module=HE):
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/run1/'
     walk_path = '../../local_resources/{}/walks_n1_l10.csv'.format(folder)
-    size = 2  # dimensionality of the embedding
+    size = 4  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
                     initial_learning_rate=learning_rate, save_path=log_path, epochs=5, concurrent_steps=4)
@@ -521,7 +521,7 @@ if __name__ == '__main__':
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.001)
+    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
     # plot_deepwalk_embeddings()
     # nips_experiment_runner()
     # folder = 'karate'

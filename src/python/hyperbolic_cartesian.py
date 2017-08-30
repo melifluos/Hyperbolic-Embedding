@@ -87,17 +87,17 @@ class cust2vec():
         :param emb: A tensor embedding
         :return: The hyperbolic gradient
         """
-        scaled_grads = []
-        for grad, name in grads:
-            vecs = tf.nn.embedding_lookup(emb, grad.indices)
-            norm_squared = tf.square(tf.norm(vecs, axis=0))
-            hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
-            g = tf.multiply(grad.values, hyperbolic_factor)
-            # g_clip = tf.clip_by_value(g, -0.1, 0.1)
-            scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
-            scaled_grads.append((scaled_grad, name))
+        # scaled_grads = []
+        grad, name = grads
+        vecs = tf.nn.embedding_lookup(emb, grad.indices)
+        norm_squared = tf.square(tf.norm(vecs, axis=0))
+        hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
+        g = tf.multiply(grad.values, hyperbolic_factor)
+        # g_clip = tf.clip_by_value(g, -0.1, 0.1)
+        scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
+        # scaled_grads.append((scaled_grad, name))
         # scaled_theta_grad = [(tf.clip_by_value(tf.scatter_div(g, g.indices, radius), -1, 1), v) for g, v in grads]
-        return scaled_grads
+        return scaled_grad, name
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -110,6 +110,18 @@ class cust2vec():
         norm = tf.nn.l2_normalize(emb, dim=1) - epsilon
         conditional_assignment_op = emb.assign(tf.where(comparison, norm, emb))
         return conditional_assignment_op
+
+    def remove_nan(self, grad, epsilon=0.001):
+
+        """
+        replace nans in gradients caused by comparing two indentical vectors with a small gradient
+        :param grad: a tf.IndexedSlicesValue
+        :param epsilon: the value to set nan values to
+        :return: the tensor with nans replaced by epsilon
+        """
+        g = tf.where(tf.is_nan(grad.values), tf.ones_like(grad.values) * epsilon, grad.values)
+        safe_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
+        return safe_grad
 
     def optimize(self, loss):
         """Build the graph to optimize the loss function."""
@@ -129,28 +141,32 @@ class cust2vec():
             # clip the vectors back inside the Poincare ball
             self.clip_tensor_norms(self.emb)
             self.clip_tensor_norms(self.sm_w_t)
-            sm_b_grad = optimizer.compute_gradients(loss, [self.sm_b])
-            emb_grad = optimizer.compute_gradients(loss, [self.emb])
-            sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
+            grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
-            sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0][0])
-            emb_grad_hist = tf.summary.histogram('emb_grad', emb_grad[0][0])
-            sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0][0])
+            # emb_grad = optimizer.compute_gradients(loss, [self.emb])
+            # sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
+
+            sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0])
+            emb_grad_hist = tf.summary.histogram('emb_grad', emb_grad[0])
+            sm_w_t_grad_hist = tf.summary.histogram('sm_w_t_grad', sm_w_t_grad[0])
 
             self.emb_grad = emb_grad
             self.sm_w_t_grad = sm_w_t_grad
 
+            # modified_emb_grad = emb_grad
+            # modified_sm_w_t_grad = sm_w_t_grad
             modified_emb_grad = self.modify_grads(emb_grad, self.emb)
             modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
             # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
             self.modified_emb_grad = modified_emb_grad
             self.modified_sm_w_t_grad = modified_sm_w_t_grad
 
-            modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0][0])
-            modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0][0])
+            modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0])
+            modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0])
 
             # gv = sm_b_grad + emb_grad + sm_w_t_grad
-            gv = sm_b_grad + modified_emb_grad + modified_sm_w_t_grad
+            gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
             self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
     def build_graph(self):
@@ -260,32 +276,6 @@ class cust2vec():
         """
         return 0.5 * tf.log(tf.divide(1 + x, 1 - x))
 
-    def inner_prod(self, r_in, r_out, theta_in, theta_out):
-        """
-        Takes the hyperbolic inner product
-        :param r_in: radius in the input embedding
-        :param r_out: radius in the output embedding
-        :param theta_in:
-        :param theta_out:
-        :return:
-        """
-        cosine = tf.cos(theta_in - theta_out)
-        radius = tf.multiply(r_in, r_out)
-        return tf.multiply(cosine, radius)
-
-    def tensor_inner_prod(self, r_example, r_sample, theta_example, theta_sample):
-        """
-        Calculate the inner product between the examples and the negative samples
-        :param r_example:
-        :param r_sample:
-        :param theta_example:
-        :param theta_sample:
-        :return:
-        """
-        radius_term = tf.multiply(r_example[:, None], r_sample[None, :])
-        cos_term = tf.cos(theta_example[:, None] - theta_sample[None, :])
-        return tf.squeeze(tf.multiply(cos_term, radius_term))
-
     def elementwise_distance(self, examples, labels):
         """
         creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
@@ -295,9 +285,9 @@ class cust2vec():
         """
         xnorm_sq = tf.square(tf.norm(examples, axis=1))
         ynorm_sq = tf.square(tf.norm(labels, axis=1))
-        euclidean_dist = tf.norm(examples - labels, axis=1)
+        euclidean_dist_sq = tf.square(tf.norm(examples - labels, axis=1))
         denom = tf.multiply(1 - xnorm_sq, 1 - ynorm_sq)
-        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist, denom))
+        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
         return hyp_dist
 
     def pairwise_distance(self, examples, samples):
@@ -310,9 +300,9 @@ class cust2vec():
         xnorm_sq = tf.square(tf.norm(examples, axis=1))
         ynorm_sq = tf.square(tf.norm(samples, axis=1))
         # use the multiplied out version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
-        euclidean_dist = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
+        euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
         denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
-        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist, denom))
+        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
         return hyp_dist
 
     def forward(self, examples, labels):
@@ -332,8 +322,13 @@ class cust2vec():
             emb_hist = tf.summary.histogram('embedding', self.emb)
 
             # Softmax weight: [vocab_size, emb_dim]. Transposed.
+            # self.sm_w_t = tf.Variable(
+            #     tf.zeros([opts.vocab_size, opts.embedding_size]),
+            #     name="sm_w_t")
+
             self.sm_w_t = tf.Variable(
-                tf.zeros([opts.vocab_size, opts.embedding_size]),
+                tf.random_uniform(
+                    [opts.vocab_size, opts.embedding_size], -init_width, init_width),
                 name="sm_w_t")
 
             smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
@@ -544,10 +539,10 @@ def generate_karate_embedding():
     y = np.array(targets['cat'])
     log_path = '../../local_resources/tf_logs/hyperbolic_cartesian/lr1_epoch1_dim4'
     walk_path = '../../local_resources/karate/walks_n1_l10.csv'
-    size = 4  # dimensionality of the embedding
+    size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
-                    statistics_interval=0.1,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=1)
+                    statistics_interval=0.001,
+                    initial_learning_rate=0.2, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/hyperbolic_cartesian_Win' + '_' + utils.get_timestamp() + '.csv'
 
