@@ -121,14 +121,14 @@ class cust2vec():
         self.theta_out_grad = theta_out_grad
         theta_in_grad_hist = tf.summary.histogram('theta_in_grad', theta_in_grad[0][0])
         theta_out_grad_hist = tf.summary.histogram('theta_out_grad', theta_out_grad[0][0])
-        print(theta_in_grad[0][0])
-        print(theta_out_grad[0][0])
+        # print(theta_in_grad[0][0])
+        # print(theta_out_grad[0][0])
 
         modified_theta_in = self.modify_grads(theta_in_grad, self.radius_in)
         # theta_in_clipped = tf.clip_by_value(modified_theta_in, -1, 1, name="theta_in_clipped")
         modified_theta_out = self.modify_grads(theta_out_grad, self.radius_out)
-        print(modified_theta_in[0][0])
-        print(modified_theta_out[0][0])
+        # print(modified_theta_in[0][0])
+        # print(modified_theta_out[0][0])
         # modified_theta_in = theta_in_grad
         # modified_theta_out = theta_out_grad
         modified_theta_in_grad_hist = tf.summary.histogram('modified_theta_in_grad', modified_theta_in[0][0])
@@ -390,7 +390,7 @@ def main(params):
             model = cust2vec(params, session)
             # session.run(tf.global_variables_initializer())
         for training_epoch in xrange(params.epochs_to_train):
-            print('running epoch {}'.format(training_epoch + 1))
+            # print('running epoch {}'.format(training_epoch + 1))
             model.train()  # Process one epoch
         # Perform a final save.
         model.saver.save(session, params.save_path, global_step=model.global_step)

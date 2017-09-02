@@ -74,7 +74,6 @@ def karate_speed_test():
     print 'gensim ran in {0} s'.format(datetime.datetime.now() - s)
 
 
-
 def blogcatalog_speed_test():
     """
     compare the runtime of cartesian tf embeddings with gensim
@@ -87,7 +86,7 @@ def blogcatalog_speed_test():
     walks = generate_gensim_sentences(walk_path)
     size = 128  # dimensionality of the embedding
     epochs = 5
-    params = HCE.Params(walk_path, batch_size=128, embedding_size=size, neg_samples=100, skip_window=5, num_pairs=1500,
+    params = HCE.Params(walk_path, batch_size=128, embedding_size=size, neg_samples=10, skip_window=5, num_pairs=1500,
                         statistics_interval=5,
                         initial_learning_rate=0.2, save_path=log_path, epochs=epochs, concurrent_steps=4)
 

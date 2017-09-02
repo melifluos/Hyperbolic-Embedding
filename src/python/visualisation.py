@@ -126,6 +126,10 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
+    if len(y > 50):
+        annotate = False
+        print 'turning off label annotation as there are {} vertices'.format(len(y))
+
     # for plotting circle line:
     a = np.linspace(0, 2 * np.pi, 500)
     cx, cy = np.cos(a), np.sin(a)

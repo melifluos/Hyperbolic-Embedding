@@ -7,6 +7,7 @@ from __future__ import division
 from __future__ import print_function
 
 import matplotlib
+
 # Force matplotlib to not use any Xwindows backend. Needed to run on the cluster
 matplotlib.use('Agg')
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -30,7 +31,6 @@ import hyperbolic_cartesian as HCE
 import polar_embedding as PE
 import multilabel_detectors as MLD
 import euclidean_cartesian as EC
-
 
 classifiers = [
     LogisticRegression(multi_class='multinomial', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8)]
@@ -84,7 +84,6 @@ def generate_karate_embedding():
 
 
 def karate_test_scenario(deepwalk_path):
-
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'
 
@@ -191,10 +190,10 @@ def generate_blogcatalog_embedding():
     y = utils.read_pickle(y_path)
     log_path = '../../local_resources/tf_logs/blogcatalog_polar/'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
-    size = 128  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+    size = 2  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=10, skip_window=5, num_pairs=1500,
                     statistics_interval=10.0,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=10, concurrent_steps=16)
+                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=16)
 
     path = '../../local_resources/blogcatalog/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
 
@@ -219,12 +218,12 @@ def generate_blogcatalog_cartesian_embedding():
     s = datetime.datetime.now()
     y_path = '../../local_resources/blogcatalog/y.p'
     y = utils.read_pickle(y_path)
-    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/2d'
+    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/128d'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
-    size = 2  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
-                    statistics_interval=1.0,
-                    initial_learning_rate=1.0, save_path=log_path, epochs=5, concurrent_steps=16)
+    size = 128  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=10, skip_window=5, num_pairs=1500,
+                    statistics_interval=10.0,
+                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=12)
 
     path = '../../local_resources/blogcatalog/embeddings/Win_cartesian' + '_' + utils.get_timestamp() + '.csv'
 
@@ -270,10 +269,10 @@ def run_embedding(folder, learning_rate, run_scenario=True, module=HE):
 
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/all/embedding_figs/{}_Win_{}.pdf'.format(folder,
-                                                                                                     utils.get_timestamp()))
+                                                                                                  utils.get_timestamp()))
     visualisation.plot_poincare_embedding(embedding_out, y,
                                           '../../results/all/embedding_figs/{}_Wout_{}.pdf'.format(folder,
-                                                                                                      utils.get_timestamp()))
+                                                                                                   utils.get_timestamp()))
     df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
@@ -393,7 +392,7 @@ def generate_political_blogs_embedding():
     s = datetime.datetime.now()
     y_path = '../../local_resources/political_blogs/y.p'
     y = utils.read_pickle(y_path)
-    log_path = '../../local_resources/tf_logs/run1/'
+    log_path = '../../local_resources/tf_logs/polblogs/'
     walk_path = '../../local_resources/political_blogs/walks_n1_l10.csv'
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
@@ -402,7 +401,7 @@ def generate_political_blogs_embedding():
 
     path = '../../local_resources/political_blogs/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
 
-    embedding_in, embedding_out = HE.main(params)
+    embedding_in, embedding_out = HCE.main(params)
 
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/political_blogs/figs/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf')
@@ -419,6 +418,66 @@ def generate_political_blogs_embedding():
     political_blogs_scenario(path)
     return path
 
+
+def batch_size_scenario():
+    """
+    Generate embeddings using different batch sizes for the ~1000 vertex polblogs network
+    :return:
+    """
+    import visualisation
+    s = datetime.datetime.now()
+    y_path = '../../local_resources/political_blogs/y.p'
+    x_path = '../../local_resources/political_blogs/X.p'
+    y = utils.read_pickle(y_path)
+    log_path = '../../local_resources/tf_logs/polblogs/'
+    walk_path = '../../local_resources/political_blogs/walks_n1_l10.csv'
+    size = 2  # dimensionality of the embedding
+    batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128]
+    embeddings = []
+    for batch_size in batch_sizes:
+        params = Params(walk_path, batch_size=batch_size, embedding_size=size, neg_samples=5, skip_window=5,
+                        num_pairs=1500,
+                        statistics_interval=10.0,
+                        initial_learning_rate=0.1, save_path=log_path, epochs=5, concurrent_steps=4)
+
+        path = '../../local_resources/political_blogs/embeddings/Win_batch_{}_{}.csv'.format(
+            batch_size, utils.get_timestamp())
+
+        embedding_in, embedding_out = HCE.main(params)
+
+        visualisation.plot_poincare_embedding(embedding_in, y,
+                                              '../../results/political_blogs/figs/poincare_polar_Win_batch_{}_{}.pdf'.format(
+                                                  batch_size, utils.get_timestamp()))
+        visualisation.plot_poincare_embedding(embedding_out, y,
+                                              '../../results/political_blogs/figs/poincare_polar_Wout_batch_{}_{}.pdf'.format(
+                                                  batch_size, utils.get_timestamp()))
+        df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
+        df_in.to_csv(path, sep=',')
+        df_out = pd.DataFrame(data=embedding_out, index=np.arange(embedding_out.shape[0]))
+        df_out.to_csv(
+            '../../local_resources/political_blogs/embeddings/Wout_batch_{}_{}.csv'.format(
+                batch_size, utils.get_timestamp()),
+            sep=',')
+        print('political blogs embedding generated in: ', datetime.datetime.now() - s)
+        embeddings.append(embedding_in)
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    names = [[str(batch_size)] for batch_size in batch_sizes]
+    n_folds = 10
+    results = run_detectors.run_all_datasets(embeddings, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    tests[0].to_csv('../../results/political_blogs/batch_size_pvalues' + utils.get_timestamp() + '.csv')
+    tests[1].to_csv('../../results/political_blogs/batch_size_pvalues' + utils.get_timestamp() + '.csv')
+    print('macro', results[0])
+    print('micro', results[1])
+    macro_path = '../../results/political_blogs/batch_size_macro' + utils.get_timestamp() + '.csv'
+    micro_path = '../../results/political_blogs/batch_size_micro' + utils.get_timestamp() + '.csv'
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
+    return path
 
 
 def visualise_deepwalk(emb_path, ypath, outfolder):
@@ -515,29 +574,37 @@ def karate_deepwalk_grid_scenario():
     results[1].to_csv(micro_path, index=True)
 
 
+def blogcatalog_test_scenario(deepwalk_path):
+    y_path = '../../local_resources/blogcatalog/y.p'
+    x_path = '../../local_resources/blogcatalog/X.p'
+
+    target = utils.read_target(y_path)
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    names = [['deepwalk'], ['logistic']]
+
+    x_deepwalk = pd.read_csv(deepwalk_path, index_col=0)
+    # all_features = np.concatenate((x.toarray(), x_deepwalk), axis=1)
+    X = [x_deepwalk.values, normalize(x, axis=0)]
+    n_folds = 10
+    results = run_detectors.run_all_datasets(X, y, names, classifiers, n_folds)
+    all_results = utils.merge_results(results, n_folds)
+    results, tests = utils.stats_test(all_results)
+    tests[0].to_csv('../../results/karate/deepwalk_macro_pvalues' + utils.get_timestamp() + '.csv')
+    tests[1].to_csv('../../results/karate/deepwalk_micro_pvalues' + utils.get_timestamp() + '.csv')
+    print('macro', results[0])
+    print('micro', results[1])
+    macro_path = '../../results/karate/deepwalk_macro' + utils.get_timestamp() + '.csv'
+    micro_path = '../../results/karate/deepwalk_micro' + utils.get_timestamp() + '.csv'
+    results[0].to_csv(macro_path, index=True)
+    results[1].to_csv(micro_path, index=True)
+
 
 if __name__ == '__main__':
-    # karate_deepwalk_grid_scenario()
+    # generate_blogcatalog_cartesian_embedding()
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
-    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
-    # plot_deepwalk_embeddings()
-    # nips_experiment_runner()
-    # folder = 'karate'
-    # y_path = '../../local_resources/{}/y.p'.format(folder)
-    # x_path = '../../local_resources/{}/X.p'.format(folder)
-    # reps = 2
-    # names = ['karate']
-    # x, y = utils.read_data(x_path, y_path, threshold=0)
-    # run_repetitions(data, y, classifiers[0], names, reps, train_pct=0.8)
-    # visualise_embedding()
-    # embedding_path = '../../local_resources/political_blogs/embeddings/Win_20170517-165831.csv'
-    # political_blogs_scenario(embedding_path)
-    # generate_political_blogs_embedding()
-    # generate_blogcatalog_embedding()
-    # visualise_embedding()
-    # generate_blogcatalog_embedding_small()
-    # path = generate_blogcatalog_cartesian_embedding_small()
-    # MLD.blogcatalog_scenario(path)
-    # karate_test_scenario('../../local_resources/blogcatalog/embeddings/Win_20170515-113351.csv')
+    batch_size_scenario()
+    # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)

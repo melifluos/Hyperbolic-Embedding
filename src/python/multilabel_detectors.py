@@ -298,7 +298,7 @@ def blogcatalog_scenario_small(embedding_path):
 def blogcatalog_scenario(embedding_path):
     target_path = '../../local_resources/blogcatalog/y.p'
     feature_path = '../../local_resources/blogcatalog/X.p'
-    hyperbolic = pd.read_csv(embedding_path, index_col=0).values
+    hyperbolic = pd.read_csv(embedding_path, index_col=0)
 
     paths = ['../../local_resources/blogcatalog/blogcatalog128.emd']
     sizes = [128]
@@ -307,7 +307,7 @@ def blogcatalog_scenario(embedding_path):
     names = [['logistic'], ['deepwalk'], ['hyp embedding']]
     x = utils.read_pickle(feature_path)
     # y = utils.read_pickle(target_path)
-    X = [x, deepwalk, hyperbolic]
+    X = [x, deepwalk, normalize(hyperbolic.values, axis=0)]
     n_folds = 2
     results = run_all_datasets(X, y, names, classifiers, n_folds)
     all_results = utils.merge_results(results, n_folds)
@@ -490,14 +490,17 @@ def run_test_train_split_scenario(folder, embedding_path):
 
 
 if __name__ == "__main__":
-    emd_path = '../../local_resources/karate/karate2.emd'
-    x_path = '../../local_resources/karate/X.p'
-    y_path = '../../local_resources/karate/y.p'
-    X, y = utils.read_data(x_path, y_path)
-    emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
-    emdv = emd.values
-    df = run_repetitions([emdv], y, ['deepwalk'], classifiers[0], 5, train_pct=0.5)
-    print df
+    # path = '../../local_resources/blogcatalog/embeddings/Wout_cartesian_20170831-041645.csv'
+    path = '../../local_resources/blogcatalog/embeddings/Win_cartesian_20170830-232747.csv'
+    blogcatalog_scenario(path)
+    # emd_path = '../../local_resources/karate/karate2.emd'
+    # x_path = '../../local_resources/karate/X.p'
+    # y_path = '../../local_resources/karate/y.p'
+    # X, y = utils.read_data(x_path, y_path)
+    # emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
+    # emdv = emd.values
+    # df = run_repetitions([emdv], y, ['deepwalk'], classifiers[0], 5, train_pct=0.5)
+    # print df
     # s = datetime.datetime.now()
     # blogcatalog_scenario_small('../../local_resources/blogcatalog/embeddings/Win_20170516-221306.csv')
     # print datetime.datetime.now() - s

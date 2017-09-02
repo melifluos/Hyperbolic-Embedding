@@ -204,7 +204,7 @@ class cust2vec():
 
     def _train_thread_body(self):
         initial_epoch, = self._session.run([self._epoch])
-        print('thread sees initial epoch: ', initial_epoch)
+        # print('thread sees initial epoch: ', initial_epoch)
         while True:
             _, epoch = self._session.run([self._train, self._epoch])
             # print('thread sees epoch: ', epoch)
