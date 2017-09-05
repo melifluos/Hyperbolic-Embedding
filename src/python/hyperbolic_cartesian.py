@@ -93,10 +93,7 @@ class cust2vec():
         norm_squared = tf.square(tf.norm(vecs, axis=0))
         hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
         g = tf.multiply(grad.values, hyperbolic_factor)
-        # g_clip = tf.clip_by_value(g, -0.1, 0.1)
         scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
-        # scaled_grads.append((scaled_grad, name))
-        # scaled_theta_grad = [(tf.clip_by_value(tf.scatter_div(g, g.indices, radius), -1, 1), v) for g, v in grads]
         return scaled_grad, name
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
@@ -111,8 +108,34 @@ class cust2vec():
         conditional_assignment_op = emb.assign(tf.where(comparison, norm, emb))
         return conditional_assignment_op
 
-    def remove_nan(self, grad, epsilon=0.001):
+    def clip_indexed_slices_norms(self, emb_slice, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        norms = tf.norm(emb_slice, axis=1)
+        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        norm = tf.nn.l2_normalize(emb_slice, dim=1) - epsilon
+        normed_slice = tf.where(comparison, norm, emb_slice)
+        return normed_slice
 
+    def clip_norms(self, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        emb_norms = tf.norm(self.emb, axis=1)
+        sm_norms = tf.norm(self.sm_w_t, axis=1)
+        emb_comparison = tf.greater(emb_norms, tf.constant(1.0, dtype=tf.float32))
+        sm_comparison = tf.greater(sm_norms, tf.constant(1.0, dtype=tf.float32))
+        emb_norms = tf.nn.l2_normalize(self.emb, dim=1) - epsilon
+        sm_norms = tf.nn.l2_normalize(self.sm_w_t, dim=1) - epsilon
+        self._clip_emb = self.emb.assign(tf.where(emb_comparison, emb_norms, self.emb))
+        self._clip_sm = self.sm_w_t.assign(tf.where(sm_comparison, sm_norms, self.sm_w_t))
+
+    def remove_nan(self, grad, epsilon=0.001):
         """
         replace nans in gradients caused by comparing two indentical vectors with a small gradient
         :param grad: a tf.IndexedSlicesValue
@@ -196,7 +219,8 @@ class cust2vec():
         tf.summary.scalar("NCE loss", loss)
         self._loss = loss
         self.optimize(loss)
-
+        # add operator to clip embeddings inside the poincare ball
+        self.clip_norms()
         # Properly initialize all variables.
         tf.global_variables_initializer().run()
         # Add opp to save variables
@@ -206,6 +230,8 @@ class cust2vec():
         initial_epoch, = self._session.run([self._epoch])
         # print('thread sees initial epoch: ', initial_epoch)
         while True:
+            # this line increases the runtime by 1000 times
+            # self._session.run([self._clip_emb, self._clip_sm])
             _, epoch = self._session.run([self._train, self._epoch])
             # print('thread sees epoch: ', epoch)
             if epoch != initial_epoch:
@@ -347,12 +373,18 @@ class cust2vec():
                         dtype=tf.int64),
                 [opts.batch_size, 1])
 
+            norm_emb = self.clip_tensor_norms(self.emb)
+            norm_sm_w_t = self.clip_tensor_norms(self.sm_w_t)
+
             # Embeddings for examples: [batch_size, emb_dim]
-            example_emb = tf.nn.embedding_lookup(self.emb, examples)
+            unorm_emb = tf.nn.embedding_lookup(self.emb, examples)
+            example_emb = self.clip_indexed_slices_norms(unorm_emb)
             # example_hist = tf.summary.histogram('input embeddings', example_emb)
 
             # Weights for labels: [batch_size, emb_dim]
-            true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+            unorm_true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+            true_w = self.clip_indexed_slices_norms(unorm_true_w)
+
             # Biases for labels: [batch_size, 1]
             true_b = tf.nn.embedding_lookup(self.sm_b, labels)
 
@@ -368,7 +400,8 @@ class cust2vec():
                 unigrams=opts.vocab_counts.tolist()))
 
             # Weights for sampled ids: [num_sampled, emb_dim]
-            sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+            unorm_sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+            sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
             # Biases for sampled ids: [num_sampled, 1]
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
@@ -385,20 +418,6 @@ class cust2vec():
             #                            transpose_b=True) + sampled_b_vec
             sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
         return true_logits, sampled_logits
-
-
-def create_final_embedding(radius, theta):
-    """
-    return embeddings in cartesian co-ordinates in the poincare disk
-    :param radius: A numpy array of shape (n_examples)
-    :param theta: A numpy array of shape (n_examples)
-    :return: A numpy array of shape (n_examples, 2)
-    """
-    final_embedding = np.zeros(shape=(len(radius), 2))
-    poincare_radius = np.tanh(0.5 * radius)
-    final_embedding[:, 0] = poincare_radius * np.cos(theta)
-    final_embedding[:, 1] = poincare_radius * np.sin(theta)
-    return final_embedding
 
 
 def main(params):

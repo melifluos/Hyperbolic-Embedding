@@ -109,77 +109,15 @@ def pairwise_distance(examples, samples):
     return hyp_dist
 
 
-def forward(examples, labels, opts):
-    """Build the graph for the forward pass."""
-    # Embedding: [vocab_size, emb_dim]
-    opts = self._options
-    with tf.name_scope('model'):
-        init_width = 0.5 / opts.embedding_size
-        # emb = np.random.uniform(low=-init_width, high=init_width,
-        #                         size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
-
-        self.emb = tf.Variable(
-            tf.random_uniform(
-                [opts.vocab_size, opts.embedding_size], -init_width, init_width),
-            name="emb")
-
-        emb_hist = tf.summary.histogram('embedding', self.emb)
-
-        # Softmax weight: [vocab_size, emb_dim]. Transposed.
-        self.sm_w_t = tf.Variable(
-            tf.zeros([opts.vocab_size, opts.embedding_size]),
-            name="sm_w_t")
-
-        # Softmax bias: [emb_dim].
-        self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
-        # Nodes to compute the nce loss w/ candidate sampling.
-        labels_matrix = tf.reshape(
-            tf.cast(labels,
-                    dtype=tf.int64),
-            [opts.batch_size, 1])
-
-        # Embeddings for examples: [batch_size, emb_dim]
-        example_emb = tf.nn.embedding_lookup(self.emb, examples)
-
-        # Weights for labels: [batch_size, emb_dim]
-        true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
-        # Biases for labels: [batch_size, 1]
-        true_b = tf.nn.embedding_lookup(self.sm_b, labels)
-
-        # with tf.name_scope('negative_samples'):
-        # Negative sampling.
-        sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
-            true_classes=labels_matrix,
-            num_true=1,
-            num_sampled=opts.num_samples,
-            unique=True,
-            range_max=opts.vocab_size,
-            distortion=0.75,
-            unigrams=opts.vocab_counts.tolist()))
-
-        # Weights for sampled ids: [num_sampled, emb_dim]
-        sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
-        # Biases for sampled ids: [num_sampled, 1]
-        sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
-
-        # True logits: [batch_size, 1]
-        # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
-        true_logits = self.elementwise_distance(example_emb, true_w) + true_b
-
-        # Sampled logits: [batch_size, num_sampled]
-        # We replicate sampled noise labels for all examples in the batch
-        # using the matmul.
-        sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
-        sampled_logits = tf.matmul(example_emb,
-                                   sampled_w,
-                                   transpose_b=True) + sampled_b_vec
-        # sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
-    return true_logits, sampled_logits
-
-
 def get_logits(example, label, sample, true_b, sample_b):
     true_logits = tf_distance(example, label) + true_b
     sampled_logits = tf_distance(example, sample) + sample_b
+    return true_logits, sampled_logits
+
+
+def get_tensor_logits(examples, labels, samples, true_b, sample_b):
+    true_logits = elementwise_distance(examples, labels) + true_b
+    sampled_logits = pairwise_distance(examples, samples) + sample_b
     return true_logits, sampled_logits
 
 
@@ -358,7 +296,7 @@ def test_remove_nan_from_index_slices():
 
 def test_grads_vectors():
     """
-    tests the gradients of the pairwise and elementwise distance functions.
+    tests the gradients of the pairwise and elementwise distance functions with 1 sample, 1 example and 1 label
     :return:
     """
     embedding_size = 2
@@ -396,66 +334,259 @@ def test_grads_vectors():
         print 'updated vectors: ', sess.run([example_emb, true_w])
 
 
-def test_NCE_theta():
+def test_clip_tensor_norms(epsilon=0.00001):
     """
-    testing the NCE estimation component in 1D angular co-ordinates without modifying the gradient
+    not used as clip_by_norm performs this task
+    :param epsilon:
     :return:
     """
-    example = 1
-    theta1 = tf.Variable(math.pi / 3.0, name='theta1')
-    theta2 = tf.Variable(math.pi / 6.0, name='theta2')
-    theta3 = tf.Variable(math.pi / 9.0, name='theta3')
-    theta4 = tf.Variable(math.pi / 12.0, name='theta4')
-    # radius1 = tf.Variable(1.0)
-    # radius2 = tf.Variable(1.0)
-    # radius3 = tf.Variable(1.0)
-    # radius4 = tf.Variable(1.0)
-    b = tf.Variable(1.0, name='b')
-
-    def tf_logits(theta1, theta2):
-        return tf.cos(theta1 - theta2)
-
-    def logit(theta1, theta2):
-        return np.cos(theta1 - theta2)
-
-    def grad_u(theta1, theta2):
-        return -1.0 * np.sin(theta1 - theta2)
-
-    def grad(theta1, theta2, dirac):
-        error = sigmoid(logit(theta1, theta2)) - dirac
-        return error * grad_u(theta1, theta2)
-
-    true_logits = tf_logits(theta1, theta2)
-    sampled_logits = tf_logits(theta3, theta4)
-    true_xent = tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=true_logits, labels=tf.ones_like(true_logits))
-    sampled_xent = tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=sampled_logits, labels=tf.zeros_like(sampled_logits))
-    loss = true_xent + sampled_xent + b
-    opt = tf.train.GradientDescentOptimizer(1.0)
-    grads_in = opt.compute_gradients(loss, [theta1, theta3])
-    grads_out = opt.compute_gradients(loss, [theta2, theta4])
-    apply_grad = opt.apply_gradients(grads_in + grads_out)
-
+    emb = tf.Variable([[1.9, 0.299], [2.1, 3.4]])
+    norms = tf.norm(emb, axis=1)
+    comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+    norm = tf.nn.l2_normalize(emb, dim=1) - epsilon
+    conditional_assignment_op = tf.assign(emb, tf.where(comparison, norm, emb))
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        for epoch in range(10):
-            b_val = 1.0
-            t1, t2, t3, t4 = sess.run([theta1, theta2, theta3, theta4])
-            theta1_grad = grad(t1, t2, dirac=1)
-            theta3_grad = grad(t3, t4, dirac=0)
-            grad_vals_in, grad_vals_out = sess.run([grads_in, grads_out], feed_dict={b: b_val})
-            print('theta1 grad should be: ', theta1_grad, 'tf value is: ', grad_vals_in[0][0])
-            print('theta3 grad should be: ', theta3_grad, 'tf value is: ', grad_vals_in[1][0])
-            print(grad_vals_in)
-            print(grad_vals_out)
-            sess.run(apply_grad, feed_dict={b: b_val})
-            assert (round(grad_vals_in[0][0], 5) == round(theta1_grad, 5))
-            assert (round(grad_vals_in[1][0], 5) == round(theta3_grad, 5))
+        print 'inital tensor: ', sess.run(emb)
+        sess.run(conditional_assignment_op)
+        print 'final tensor: ', sess.run(emb)
+
+
+def test_clip_indexed_slices_norms(epsilon=0.00001):
+    """
+    not used as clip_by_norm performs this task
+    :param epsilon:
+    :return:
+    """
+    emb = tf.Variable([[1.9, 0.299], [2.1, 3.4], [0.1, 0.3]])
+    examples = tf.constant([1, 2])
+    emb_slice = tf.nn.embedding_lookup(emb, examples)
+    norms = tf.norm(emb_slice, axis=1)
+    comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+    norm = tf.nn.l2_normalize(emb_slice, dim=1) - epsilon
+    normed_slice = tf.where(comparison, norm, emb_slice)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        print 'inital tensor: ', sess.run(emb_slice)
+        # sess.run(conditional_assignment_op)
+        print 'final tensor: ', sess.run(normed_slice)
+
+
+class TestEmbClipping:
+    """
+    test that the embedding clipping is being called
+    :return:
+    """
+
+    def __init__(self):
+        self.build_graph()
+
+    def build_graph(self):
+        """
+        construct a forward pass
+        :return:
+        """
+        embedding_size = 2
+        vocab_size = 6
+        self.emb = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -10, 10))
+        self.sm_w_t = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -0.1, 0.1))
+        # sm_w_t = tf.Variable(tf.zeros([vocab_size, embedding_size]))
+        self.sm_b = tf.Variable(tf.zeros([vocab_size]))
+
+        examples = tf.constant([0, 1])
+        labels = tf.constant([2, 3])
+        sampled_ids = tf.constant([4, 5])
+
+        example_emb = tf.nn.embedding_lookup(self.emb, examples)
+        # make sure tensors are normalised
+        # Weights for labels: [batch_size, emb_dim]
+        true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+        # Biases for labels: [batch_size, 1]
+        true_b = tf.nn.embedding_lookup(self.sm_b, labels)
+        sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+        # Biases for sampled ids: [num_sampled, 1]
+        sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
+        true_logits, sampled_logits = get_tensor_logits(example_emb, true_w, sampled_w, true_b, sampled_b)
+        loss = nce_loss(true_logits, sampled_logits)
+        self._loss = loss
+        self.optimize(loss)
+        self.clip_emb_tensor_norms()
+        self.clip_sm_tensor_norms()
+
+    def modify_grads(self, grads, emb):
+        """
+        The tensor flow autograd gives us Euclidean gradients. Here we multiply by (1/4)(1-||emb||^2)^2
+        to convert to the hyperbolic gradient
+        :param grads: a list of tuples of [(grads, name),...]
+        :param emb: A tensor embedding
+        :return: The hyperbolic gradient
+        """
+        # scaled_grads = []
+        grad, name = grads
+        vecs = tf.nn.embedding_lookup(emb, grad.indices)
+        norm_squared = tf.square(tf.norm(vecs, axis=0))
+        hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
+        g = tf.multiply(grad.values, hyperbolic_factor)
+        scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
+        return scaled_grad, name
+
+    def optimize(self, loss):
+        """
+        optimize a loss function
+        :param loss:
+        :return:
+        """
+        optimizer = tf.train.GradientDescentOptimizer(0.1)
+        # emb = self.clip_tensor_norms(self.emb)
+        # sm_w_t_grad =
+        # emb = self.clip_tensor_norms()
+        emb_grad = optimizer.compute_gradients(loss, [self.emb])
+        # emb_grad = self.modify_grads(temp, emb)
+        sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
+        grads = emb_grad + sm_w_t_grad
+        self._train = optimizer.apply_gradients(grads)
+
+    def clip_emb_tensor_norms(self, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        norms = tf.norm(self.emb, axis=1)
+        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        norm = tf.nn.l2_normalize(self.emb, dim=1) - epsilon
+        # tf.assign(emb, tf.where(comparison, norm, emb))
+        # self.emb = emb
+        self._emb_clipper = self.emb.assign(tf.where(comparison, norm, self.emb))
+        # conditional_assignment_op = emb.assign(tf.where(comparison, norm, emb))
+        # return conditional_assignment_op
+
+    def clip_sm_tensor_norms(self, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        norms = tf.norm(self.sm_w_t, axis=1)
+        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        norm = tf.nn.l2_normalize(self.sm_w_t, dim=1) - epsilon
+        # tf.assign(emb, tf.where(comparison, norm, emb))
+        # self.emb = emb
+        self._sm_clipper = self.emb.assign(tf.where(comparison, norm, self.sm_w_t))
+
+    def clip_tensor_norms(self, emb, epsilon=0.00001):
+        """
+        not used as clip_by_norm performs this task
+        :param epsilon:
+        :return:
+        """
+        norms = tf.norm(emb, axis=1)
+        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        norm = tf.nn.l2_normalize(emb, dim=1) - epsilon
+        # tf.assign(emb, tf.where(comparison, norm, emb))
+        # self.emb = emb
+        self._clipper = self.emb.assign(tf.where(comparison, norm, emb))
+
+
+def test_emb_clipping():
+    with tf.Session() as sess:
+        test = TestEmbClipping()
+        sess.run(tf.global_variables_initializer())
+        for epoch in range(3):
+            emb, sm_w_t = sess.run([test.emb, test.sm_w_t])
+            print emb
+            print sm_w_t
+            sess.run(test._clipper(test.emb))
+            sess.run(test._clipper(test.sm_w_t))
+            emb, sm_w_t = sess.run([test.emb, test.sm_w_t])
+            print emb
+            print sm_w_t
+            # print temp
+            # sess.run(test._train)
+            sess.run(test._train)
+            # tensors = sess.run([example_emb, true_w, sampled_w])
+            # # assert ~np.isnan(np.sum(tensors)), "nan value found in tensors"
+            # grads = sess.run([emb_grad, sm_w_t_grad])
+            # emb_grads = grads[0][0][0]
+            # sm_w_t_grads = grads[1][0][0]
+            # assert ~np.isnan(np.sum(emb_grads.values)), \
+            #     "nan value found in grads at epoch {} with {} tensors for emb grads {}".format(epoch, tensors,
+            #                                                                                    emb_grads)
+            # assert ~np.isnan(np.sum(sm_w_t_grads.values)), \
+            #     "nan value found in grads at epoch {} with {} tensors for sm grads {}".format(epoch, tensors,
+            #                                                                                   sm_w_t_grads)
+            # sess.run(apply_grad)
+
+
+def test_grads_tensors():
+    """
+    tests the gradients of the pairwise and elementwise distance functions with 1 sample, 1 example and 1 label
+    :return:
+    """
+    embedding_size = 2
+    vocab_size = 100
+    emb = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -0.1, 0.1))
+    sm_w_t = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -0.1, 0.1))
+    # sm_w_t = tf.Variable(tf.zeros([vocab_size, embedding_size]))
+    sm_b = tf.Variable(tf.zeros([vocab_size]))
+
+    examples = tf.Variable([1, 2])
+    labels = tf.Variable([3, 4])
+    sampled_ids = tf.Variable([5, 6, 7, 8, 9, 10, 11, 12])
+
+    example_emb = tf.nn.embedding_lookup(emb, examples)
+    # Weights for labels: [batch_size, emb_dim]
+    true_w = tf.nn.embedding_lookup(sm_w_t, labels)
+    # Biases for labels: [batch_size, 1]
+    true_b = tf.nn.embedding_lookup(sm_b, labels)
+    sampled_w = tf.nn.embedding_lookup(sm_w_t, sampled_ids)
+    # Biases for sampled ids: [num_sampled, 1]
+    sampled_b = tf.nn.embedding_lookup(sm_b, sampled_ids)
+    true_logits, sampled_logits = get_tensor_logits(example_emb, true_w, sampled_w, true_b, sampled_b)
+    loss = nce_loss(true_logits, sampled_logits)
+    opt = tf.train.GradientDescentOptimizer(0.1)
+    emb_grad = opt.compute_gradients(loss, [emb])
+    sm_w_t_grad = opt.compute_gradients(loss, [sm_w_t])
+    grads = emb_grad + sm_w_t_grad
+    apply_grad = opt.apply_gradients(grads)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        for epoch in range(100):
+            tensors = sess.run([example_emb, true_w, sampled_w])
+            # assert ~np.isnan(np.sum(tensors)), "nan value found in tensors"
+            grads = sess.run([emb_grad, sm_w_t_grad])
+            emb_grads = grads[0][0][0]
+            sm_w_t_grads = grads[1][0][0]
+            assert ~np.isnan(np.sum(emb_grads.values)), \
+                "nan value found in grads at epoch {} with {} tensors for emb grads {}".format(epoch, tensors,
+                                                                                               emb_grads)
+            assert ~np.isnan(np.sum(sm_w_t_grads.values)), \
+                "nan value found in grads at epoch {} with {} tensors for sm grads {}".format(epoch, tensors,
+                                                                                              sm_w_t_grads)
+            sess.run(apply_grad)
+
+
+def test_slice_update():
+    """
+    test updating just a slice of a tensor
+    :return:
+    """
+    embedding_size = 2
+    vocab_size = 100
+    emb = tf.Variable(tf.zeros([3, 4]))
+    indices = tf.Variable([0, 1])
+    slice_assign = emb[indices, :].assign(tf.ones(4))
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        print sess.run(emb)
+        print sess.run(slice_assign)
 
 
 if __name__ == '__main__':
-    test_remove_nan_from_index_slices()
+    test_clip_indexed_slices_norms()
+    # test_clip_tensor_norms()
+    # test_emb_clipping()
+    # test_grads_tensors()
     # x = np.array([0.0, 0.999])
     # y = np.array([.5, 0.0])
     # print grad_d_x(x, y)
