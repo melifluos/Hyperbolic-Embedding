@@ -118,8 +118,8 @@ def tf_pairwise_hyperbolic_distance(x, y):
     :param y: second set of vectors of shape (ndata2, ndim)
     :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
     """
-    xnorm_sq = tf.square(tf.norm(x, axis=1))
-    ynorm_sq = tf.square(tf.norm(y, axis=1))
+    xnorm_sq = tf.reduce_sum(tf.square(x), axis=1)
+    ynorm_sq = tf.reduce_sum(tf.square(y), axis=1)
     # use the multiplied out version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
     euclidean_dist = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(x, y, transpose_b=True)
     denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
@@ -151,9 +151,9 @@ def tf_elementwise_hyperbolic_distance(x, y):
     :param y: second set of vectors of shape (ndata2, ndim)
     :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
     """
-    xnorm_sq = tf.square(tf.norm(x, axis=1))
-    ynorm_sq = tf.square(tf.norm(y, axis=1))
-    euclidean_dist_sq = tf.square(tf.norm(x - y, axis=1))
+    ynorm_sq = tf.reduce_sum(tf.square(y), axis=1)
+    xnorm_sq = tf.reduce_sum(tf.square(x), axis=1)
+    euclidean_dist_sq = tf.reduce_sum(tf.square(x-y), axis=1)
     denom = tf.multiply(1 - xnorm_sq, 1 - ynorm_sq)
     hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
     return hyp_dist
@@ -194,8 +194,8 @@ def test_distance():
 
 
 def test_hyperbolic_pairwise_distance():
-    x = np.array([[.1, 0], [.2, 0], [.3, 0]], dtype=np.float32)
-    y = np.array([[0, .1], [.1, .1]], dtype=np.float32)
+    x = np.array([[.1, 0], [.2, 0], [.3, 0], [1,0], [0,0]], dtype=np.float32)
+    y = np.array([[0, .1], [.1, .1], [0,0]], dtype=np.float32)
     np_dist = np_pairwise_hyperbolic_distance(x, y)
     print 'np distance', np_dist
     tfx = tf.Variable(x)
@@ -208,8 +208,8 @@ def test_hyperbolic_pairwise_distance():
 
 
 def test_hyperbolic_elementwise_distance():
-    x = np.array([[.2, 0], [.3, .0]], dtype=np.float32)
-    y = np.array([[.1, .1], [.2, .4]], dtype=np.float32)
+    x = np.array([[.2, 0], [.3, .0], [0, 0], [1, 0], [1, 0]], dtype=np.float32)
+    y = np.array([[.1, .1], [.2, .4], [0, 0], [0, 0], [0.5, 0]], dtype=np.float32)
     np_dist = np_elementwise_hyperbolic_distance(x, y)
     print 'np distance', np_dist
     tfx = tf.Variable(x)
@@ -218,7 +218,10 @@ def test_hyperbolic_elementwise_distance():
         sess.run(tf.global_variables_initializer())
         tf_dist = sess.run(tf_elementwise_hyperbolic_distance(tfx, tfy))
         print 'tf distance', tf_dist, 'of shape: ', tf_dist.shape
-        assert np.array_equal(np.round(np_dist, 5), np.round(tf_dist, 5))
+        assert tf_dist[2] == 0
+        assert tf_dist[3] == np.inf
+        assert tf_dist[4] == np.inf
+        assert np.array_equal(np.round(np_dist, 5), np.round(tf_dist, 5)), 'tensorflow and numpy values differ'
 
 
 def tf_vec_distance(x, y):
@@ -240,13 +243,31 @@ def tf_vec_distance(x, y):
 
 
 if __name__ == '__main__':
+    # x = tf.constant(np.array([[.2, 0], [.3, .0], [0, 0], [1.0, 0.0], [1.0, 0.0]], dtype=np.float32))
+    # y = tf.constant(np.array([[.1, .1], [.2, .4], [0, 0], [0, 0], [0.5, 0]], dtype=np.float32))
+    #
+    # # x = tf.constant([[0, 0], [0.1, 0.2]], tf.float32)
+    # # y = tf.constant([[1, 0], [.2, .3]], tf.float32)
+    # with tf.Session() as sess:
+    #     sess.run(tf.global_variables_initializer())
+    #     xnorm_sq = sess.run(tf.square(tf.norm(x, axis=1)))
+    #     print sess.run(tf.reduce_sum(tf.square(x), axis=1))
+    #     print sess.run(tf.norm(x, axis=1))
+    #     # print sess.run(tf.matmul(x, x, transpose_b=True))
+    #     print xnorm_sq
+    #     ynorm_sq = sess.run(tf.square(tf.norm(y, axis=1)))
+    #     print ynorm_sq
+    #     euclidean_dist_sq = sess.run(tf.square(tf.norm(x - y, axis=1)))
+    #     denom = sess.run(tf.multiply(1 - xnorm_sq, 1 - ynorm_sq))
+    #     print denom
+    #     hyp_dist = sess.run(tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom)))
+    #     print hyp_dist
     # print np_distance(x, yvec)
     # print test_hyperbolic_elementwise_distance()
     # print test_hyperbolic_pairwise_distance()
     # print test_euclidean_pairwise_distance()
-    test_distance()
+    # test_distance()
     test_hyperbolic_pairwise_distance()
-    test_hyperbolic_elementwise_distance()
     # x = np.array([[0.7141275, 0.7], [0.7, 0.7]])
     # y = np.array([[0, 0.9], [-0.7, -0.7]])
     # print np_elementwise_hyperbolic_distance(x, y)

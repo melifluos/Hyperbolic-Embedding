@@ -103,7 +103,7 @@ class cust2vec():
         :return:
         """
         norms = tf.norm(emb, axis=1)
-        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        comparison = tf.greater_equal(norms, tf.constant(1.0, dtype=tf.float32))
         norm = tf.nn.l2_normalize(emb, dim=1) - epsilon
         conditional_assignment_op = emb.assign(tf.where(comparison, norm, emb))
         return conditional_assignment_op
@@ -115,7 +115,7 @@ class cust2vec():
         :return:
         """
         norms = tf.norm(emb_slice, axis=1)
-        comparison = tf.greater(norms, tf.constant(1.0, dtype=tf.float32))
+        comparison = tf.greater_equal(norms, tf.constant(1.0, dtype=tf.float32))
         norm = tf.nn.l2_normalize(emb_slice, dim=1) - epsilon
         normed_slice = tf.where(comparison, norm, emb_slice)
         return normed_slice
@@ -128,8 +128,8 @@ class cust2vec():
         """
         emb_norms = tf.norm(self.emb, axis=1)
         sm_norms = tf.norm(self.sm_w_t, axis=1)
-        emb_comparison = tf.greater(emb_norms, tf.constant(1.0, dtype=tf.float32))
-        sm_comparison = tf.greater(sm_norms, tf.constant(1.0, dtype=tf.float32))
+        emb_comparison = tf.greater_equal(emb_norms, tf.constant(1.0, dtype=tf.float32))
+        sm_comparison = tf.greater_equal(sm_norms, tf.constant(1.0, dtype=tf.float32))
         emb_norms = tf.nn.l2_normalize(self.emb, dim=1) - epsilon
         sm_norms = tf.nn.l2_normalize(self.sm_w_t, dim=1) - epsilon
         self._clip_emb = self.emb.assign(tf.where(emb_comparison, emb_norms, self.emb))
@@ -142,8 +142,9 @@ class cust2vec():
         :param epsilon: the value to set nan values to
         :return: the tensor with nans replaced by epsilon
         """
-        g = tf.where(tf.is_nan(grad.values), tf.ones_like(grad.values) * epsilon, grad.values)
-        safe_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
+        g1 = tf.where(tf.is_nan(grad.values), tf.ones_like(grad.values) * epsilon, grad.values)
+        g2 = tf.where(tf.is_inf(g1), tf.ones_like(g1) * epsilon, g1)
+        safe_grad = tf.IndexedSlices(g2, grad.indices, grad.dense_shape)
         return safe_grad
 
     def optimize(self, loss):
@@ -162,10 +163,9 @@ class cust2vec():
             # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
             # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
             # clip the vectors back inside the Poincare ball
-            self.clip_tensor_norms(self.emb)
-            self.clip_tensor_norms(self.sm_w_t)
-            grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
-            sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
+            # self.clip_tensor_norms(self.emb)
+            # self.clip_tensor_norms(self.sm_w_t)
+            sm_b_grad, emb_grad, sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
 
             # emb_grad = optimizer.compute_gradients(loss, [self.emb])
             # sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
@@ -179,6 +179,7 @@ class cust2vec():
 
             # modified_emb_grad = emb_grad
             # modified_sm_w_t_grad = sm_w_t_grad
+            modified_sm_b_grad = self.modify_grads(sm_b_grad, self.sm_b)
             modified_emb_grad = self.modify_grads(emb_grad, self.emb)
             modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
             # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
@@ -188,8 +189,11 @@ class cust2vec():
             modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0])
             modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0])
 
+            grads = [modified_sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
+            gv = [(self.remove_nan(grad), var) for grad, var in grads]
+
             # gv = sm_b_grad + emb_grad + sm_w_t_grad
-            gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
+            # gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
             self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
 
     def build_graph(self):
@@ -309,9 +313,9 @@ class cust2vec():
         :param labels: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        xnorm_sq = tf.square(tf.norm(examples, axis=1))
-        ynorm_sq = tf.square(tf.norm(labels, axis=1))
-        euclidean_dist_sq = tf.square(tf.norm(examples - labels, axis=1))
+        xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
+        ynorm_sq = tf.reduce_sum(tf.square(labels), axis=1)
+        euclidean_dist_sq = tf.reduce_sum(tf.square(examples - labels), axis=1)
         denom = tf.multiply(1 - xnorm_sq, 1 - ynorm_sq)
         hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
         return hyp_dist
@@ -323,8 +327,8 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        xnorm_sq = tf.square(tf.norm(examples, axis=1))
-        ynorm_sq = tf.square(tf.norm(samples, axis=1))
+        xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
+        ynorm_sq = tf.reduce_sum(tf.square(samples), axis=1)
         # use the multiplied out version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
         euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
         denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
@@ -373,8 +377,8 @@ class cust2vec():
                         dtype=tf.int64),
                 [opts.batch_size, 1])
 
-            norm_emb = self.clip_tensor_norms(self.emb)
-            norm_sm_w_t = self.clip_tensor_norms(self.sm_w_t)
+            # norm_emb = self.clip_tensor_norms(self.emb)
+            # norm_sm_w_t = self.clip_tensor_norms(self.sm_w_t)
 
             # Embeddings for examples: [batch_size, emb_dim]
             unorm_emb = tf.nn.embedding_lookup(self.emb, examples)

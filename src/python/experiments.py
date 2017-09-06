@@ -221,9 +221,9 @@ def generate_blogcatalog_cartesian_embedding():
     log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/128d'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
     size = 128  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=10, skip_window=5, num_pairs=1500,
-                    statistics_interval=10.0,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=12)
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=.1,
+                    initial_learning_rate=0.1, save_path=log_path, epochs=5, concurrent_steps=12)
 
     path = '../../local_resources/blogcatalog/embeddings/Win_cartesian' + '_' + utils.get_timestamp() + '.csv'
 
