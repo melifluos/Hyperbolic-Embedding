@@ -163,9 +163,10 @@ class cust2vec():
             # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
             # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
             # clip the vectors back inside the Poincare ball
-            # self.clip_tensor_norms(self.emb)
-            # self.clip_tensor_norms(self.sm_w_t)
-            sm_b_grad, emb_grad, sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            self.clip_tensor_norms(self.emb)
+            self.clip_tensor_norms(self.sm_w_t)
+            grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
             # emb_grad = optimizer.compute_gradients(loss, [self.emb])
             # sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
@@ -179,7 +180,7 @@ class cust2vec():
 
             # modified_emb_grad = emb_grad
             # modified_sm_w_t_grad = sm_w_t_grad
-            modified_sm_b_grad = self.modify_grads(sm_b_grad, self.sm_b)
+            # modified_sm_b_grad = self.modify_grads(sm_b_grad, self.sm_b)
             modified_emb_grad = self.modify_grads(emb_grad, self.emb)
             modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
             # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
@@ -189,8 +190,8 @@ class cust2vec():
             modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0])
             modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0])
 
-            grads = [modified_sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
-            gv = [(self.remove_nan(grad), var) for grad, var in grads]
+            gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
+
 
             # gv = sm_b_grad + emb_grad + sm_w_t_grad
             # gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
@@ -381,13 +382,13 @@ class cust2vec():
             # norm_sm_w_t = self.clip_tensor_norms(self.sm_w_t)
 
             # Embeddings for examples: [batch_size, emb_dim]
-            unorm_emb = tf.nn.embedding_lookup(self.emb, examples)
-            example_emb = self.clip_indexed_slices_norms(unorm_emb)
+            example_emb = tf.nn.embedding_lookup(self.emb, examples)
+            # example_emb = self.clip_indexed_slices_norms(unorm_emb)
             # example_hist = tf.summary.histogram('input embeddings', example_emb)
 
             # Weights for labels: [batch_size, emb_dim]
-            unorm_true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
-            true_w = self.clip_indexed_slices_norms(unorm_true_w)
+            true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+            # true_w = self.clip_indexed_slices_norms(unorm_true_w)
 
             # Biases for labels: [batch_size, 1]
             true_b = tf.nn.embedding_lookup(self.sm_b, labels)
@@ -404,8 +405,8 @@ class cust2vec():
                 unigrams=opts.vocab_counts.tolist()))
 
             # Weights for sampled ids: [num_sampled, emb_dim]
-            unorm_sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
-            sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
+            sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+            # sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
             # Biases for sampled ids: [num_sampled, 1]
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 

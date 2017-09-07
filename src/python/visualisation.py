@@ -136,14 +136,14 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
 
     fg, ax = plt.subplots(1, 1)
     ax.plot(cx, cy, '-', alpha=.5)  # draw unit circle line
-    ax.scatter(x, y, c=colours, alpha=0.5, s=200)  # plot random points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=50)  # plot random points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
             plt.annotate(
                 vert_lab,
-                xy=(x, y), xytext=(-2, 2),
-                textcoords='offset points', ha='right', va='bottom', fontsize=20)
+                xy=(x, y), xytext=(-3, 3),
+                textcoords='offset points', ha='right', va='bottom', fontsize=10)
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()
@@ -180,15 +180,19 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
+    if len(y) > 50:
+        annotate = False
+        print 'turning off label annotation as there are {} vertices'.format(len(y))
+
     fg, ax = plt.subplots(1, 1)
-    ax.scatter(x, y, c=colours, alpha=0.5, s=200)  # plot points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=50)  # plot points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
             plt.annotate(
                 vert_lab,
                 xy=(x, y), xytext=(-3, 3),
-                textcoords='offset points', ha='right', va='bottom', fontsize=20)
+                textcoords='offset points', ha='right', va='bottom', fontsize=10)
     ax.axis('equal')
     ax.grid(True)
     # fg.canvas.draw()
@@ -207,7 +211,6 @@ def get_first_label(labels):
 
 def MF_embedding_TSNE():
     """
-
     :return:
     """
     path = '../../local_resources/0_001sample.csv'
@@ -221,12 +224,33 @@ def MF_embedding_TSNE():
     tsne_plot(X, y)
 
 
+def visualise_deepwalk(emb_path, ypath, outfolder):
+    import visualisation
+    # path = '../../local_resources/blogcatalog/embeddings/Win_20170515-160129.csv'
+    embedding = pd.read_csv(emb_path, index_col=0, header=None, skiprows=1, sep=" ").values
+    # ypath = '../../local_resources/blogcatalog/y.p'
+    y = utils.read_pickle(ypath)
+    y = y['cat'].values
+    outpath = outfolder + '/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf'
+    visualisation.plot_deepwalk_embedding(embedding, y, outpath)
+
+
+def plot_deepwalk_nips_graphs():
+    names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
+    for name in names:
+        emb_path = '../../local_resources/{}/{}2.emd'.format(name, name)
+        ypath = '../../local_resources/{}/y.p'.format(name)
+        outfolder = '../../local_resources/{}/deepwalk_figs'.format(name)
+        visualise_deepwalk(emb_path, ypath, outfolder)
+
+
 if __name__ == '__main__':
-    emd_path = '../../local_resources/karate/karate2.emd'
-    x_path = '../../local_resources/karate/X.p'
-    y_path = '../../local_resources/karate/y.p'
-    X, y = utils.read_data(x_path, y_path)
-    emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
-    emdv = emd.values
-    outpath = '../../results/karate/karate2.pdf'
-    plot_poincare_embedding(emdv, y, outpath, annotate=True)
+    plot_deepwalk_nips_graphs()
+    # emd_path = '../../local_resources/karate/karate2.emd'
+    # x_path = '../../local_resources/karate/X.p'
+    # y_path = '../../local_resources/karate/y.p'
+    # X, y = utils.read_data(x_path, y_path)
+    # emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
+    # emdv = emd.values
+    # outpath = '../../results/karate/karate2.pdf'
+    # plot_poincare_embedding(emdv, y, outpath, annotate=True)

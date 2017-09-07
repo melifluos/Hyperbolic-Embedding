@@ -492,6 +492,8 @@ def run_test_train_split_scenario(folder, embedding_path):
 if __name__ == "__main__":
     # path = '../../local_resources/blogcatalog/embeddings/Wout_cartesian_20170831-041645.csv'
     path = '../../local_resources/blogcatalog/embeddings/Win_cartesian_20170830-232747.csv'
+    path = '../../local_resources/blogcatalog/embeddings/Win_cartesian_20170906-215015.csv'
+    path = '../../local_resources/blogcatalog/embeddings/Win_cartesian_20170907-080731.csv'
     blogcatalog_scenario(path)
     # emd_path = '../../local_resources/karate/karate2.emd'
     # x_path = '../../local_resources/karate/X.p'

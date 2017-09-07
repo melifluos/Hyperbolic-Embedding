@@ -218,12 +218,12 @@ def generate_blogcatalog_cartesian_embedding():
     s = datetime.datetime.now()
     y_path = '../../local_resources/blogcatalog/y.p'
     y = utils.read_pickle(y_path)
-    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/128d'
+    log_path = '../../local_resources/tf_logs/blogcatalog_cartesian/final_throw1'
     walk_path = '../../local_resources/blogcatalog/p025_q025_d128_walks.csv'
     size = 128  # dimensionality of the embedding
-    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
-                    statistics_interval=.1,
-                    initial_learning_rate=0.1, save_path=log_path, epochs=5, concurrent_steps=12)
+    params = Params(walk_path, batch_size=128, embedding_size=size, neg_samples=64, skip_window=5, num_pairs=1500,
+                    statistics_interval=10,
+                    initial_learning_rate=0.1, save_path=log_path, epochs=10, concurrent_steps=12)
 
     path = '../../local_resources/blogcatalog/embeddings/Win_cartesian' + '_' + utils.get_timestamp() + '.csv'
 
@@ -480,21 +480,6 @@ def batch_size_scenario():
     return path
 
 
-def visualise_deepwalk(emb_path, ypath, outfolder):
-    import visualisation
-    # path = '../../local_resources/blogcatalog/embeddings/Win_20170515-160129.csv'
-    embedding = pd.read_csv(emb_path, index_col=0, header=None, skiprows=1, sep=" ").values
-    # ypath = '../../local_resources/blogcatalog/y.p'
-    y = utils.read_pickle(ypath)
-    y = y['cat'].values
-    outpath = outfolder + '/poincare_polar_Win' + '_' + utils.get_timestamp() + '.pdf'
-    visualisation.plot_deepwalk_embedding(embedding, y, outpath)
-
-
-def generate_nips_deepwalk_embeddings():
-    names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
-
-
 def nips_experiment_runner(module, folder, learning_rate):
     """
     runs the experiments on small graphs submitted to NIPS and MLG
@@ -522,6 +507,7 @@ def plot_deepwalk_embeddings():
     plots the 2D deepwalk embeddings
     :return:
     """
+    from visualisation import visualise_deepwalk
     # names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
     # names = ['political_blogs', 'karate']
     names = ['karate']
@@ -602,9 +588,11 @@ def blogcatalog_test_scenario(deepwalk_path):
 
 
 if __name__ == '__main__':
-    generate_blogcatalog_cartesian_embedding()
+    path = generate_blogcatalog_cartesian_embedding()
+    blogcatalog_test_scenario(path)
     # deepwalk_path = '../../local_resources/karate/karate128.emd'
     # karate_test_scenario(deepwalk_path)
     # generate_karate_embedding()
     # batch_size_scenario()
     # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
+    # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
