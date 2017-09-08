@@ -31,6 +31,8 @@ import hyperbolic_cartesian as HCE
 import polar_embedding as PE
 import multilabel_detectors as MLD
 import euclidean_cartesian as EC
+from generate_tree import create_adj_mat, generate_y
+from graph import generate_simulated_tree
 
 classifiers = [
     LogisticRegression(multi_class='multinomial', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8)]
@@ -587,12 +589,54 @@ def blogcatalog_test_scenario(deepwalk_path):
     results[1].to_csv(micro_path, index=True)
 
 
+def simulated_tree_scenario(branching_factor, levels):
+    import visualisation
+    folder = '../../local_resources/simulated_trees'
+    deepwalk_path = '../../local_resources/simulated_trees/deepwalk_z{}_l{}.emd'.format(branching_factor, levels)
+    walk_path = '../../local_resources/simulated_trees/walks_long_z{}_l{}.emd'.format(branching_factor, levels)
+    emb_path = create_adj_mat(folder, branching_factor, levels)
+    generate_simulated_tree(emb_path, walk_path, deepwalk_path)
+
+    deepwalk_emd = pd.read_csv(deepwalk_path, header=None, index_col=0, skiprows=1, sep=" ")
+
+    s = datetime.datetime.now()
+    # y_path = '../../local_resources/blogcatalog_121_sample/y.p'
+    # y = utils.read_pickle(y_path)
+    y = generate_y(branching_factor, levels)
+
+    log_path = '../../local_resources/tf_logs/sim_tree/'
+    # walk_path = '../../local_resources/simulated_trees/walks.csv'
+    size = 2  # dimensionality of the embedding
+    params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
+                    statistics_interval=0.1,
+                    initial_learning_rate=1.0, save_path=log_path, epochs=20, concurrent_steps=4)
+
+    path = '../../local_resources/simulated_trees/embeddings/Win' + '_' + utils.get_timestamp() + '.csv'
+
+    embedding_in, embedding_out = HE.main(params)
+
+    visualisation.plot_deepwalk_embedding(deepwalk_emd.values, y,
+                                          '../../results/simulated_trees/figs/deepwalk_z{}_l{}_{}.pdf'.format(
+                                              branching_factor, levels, utils.get_timestamp()))
+
+    visualisation.plot_poincare_embedding(embedding_in, y,
+                                          '../../results/simulated_trees/figs/hyp_z{}_l{}_{}.pdf'.format(
+                                              branching_factor, levels, utils.get_timestamp()))
+
+    df_in = pd.DataFrame(data=embedding_in, index=np.arange(embedding_in.shape[0]))
+    df_in.to_csv(path, sep=',')
+
+    return path
+
+
 if __name__ == '__main__':
-    path = generate_blogcatalog_embedding()
-    MLD.blogcatalog_scenario(path)
-    # deepwalk_path = '../../local_resources/karate/karate128.emd'
-    # karate_test_scenario(deepwalk_path)
-    # generate_karate_embedding()
-    # batch_size_scenario()
-    # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
-    # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
+    path = '../../local_resources/simulated_trees/X_z4_l5.p'
+    for z in xrange(3, 5):
+        for l in xrange(3, 6):
+            simulated_tree_scenario(z, l)
+            # deepwalk_path = '../../local_resources/karate/karate128.emd'
+            # karate_test_scenario(deepwalk_path)
+            # generate_karate_embedding()
+            # batch_size_scenario()
+            # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
+            # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)

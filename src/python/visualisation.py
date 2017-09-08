@@ -126,7 +126,7 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
-    if len(y) > 50:
+    if len(y) > 200:
         annotate = False
         print 'turning off label annotation as there are {} vertices'.format(len(y))
 
@@ -180,7 +180,7 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
-    if len(y) > 50:
+    if len(y) > 200:
         annotate = False
         print 'turning off label annotation as there are {} vertices'.format(len(y))
 

@@ -259,24 +259,23 @@ def karate_deepwalk_gridsearch():
                 g.learn_embeddings(walks, size, emdpath)
 
 
-def generate_simulated_tree(path):
-    emdpath = '../../local_resources/simulated_trees/tree.emd'
-    walkpath = '../../local_resources/simulated_trees/walk.csv'
+def generate_simulated_tree(path, walkpath, deepwalk_path):
     x = utils.read_pickle(path)
     g = Graph(x)
     print 'building edges'
     g.build_edge_array()
     print 'generating walks'
-    walks = g.generate_walks(1, 10)
+    walks = g.generate_walks(10, 80)
     print 'generated walk of shape {}'.format(walks.shape)
     size = 2
-    g.learn_embeddings(walks, size, emdpath)
+    g.learn_embeddings(walks, size, deepwalk_path)
     df = pd.DataFrame(walks)
     df.to_csv(walkpath, index=False, header=None)
 
 
 if __name__ == '__main__':
     s = datetime.now()
-    path
+    path = '../../local_resources/simulated_trees/X_z4_l5.p'
+    generate_simulated_tree(path)
     # karate_deepwalk_gridsearch()
     print datetime.now() - s, ' s'
