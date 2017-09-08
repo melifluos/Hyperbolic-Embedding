@@ -78,6 +78,18 @@ class cust2vec():
     def sinh(self, x):
         return 0.5 * (tf.subtract(tf.exp(x), tf.exp(-x)))
 
+    def remove_nan(self, grad, epsilon=0.001):
+        """
+        replace nans in gradients caused by comparing two indentical vectors with a small gradient
+        :param grad: a tf.IndexedSlicesValue
+        :param epsilon: the value to set nan values to
+        :return: the tensor with nans replaced by epsilon
+        """
+        g1 = tf.where(tf.is_nan(grad.values), tf.ones_like(grad.values) * epsilon, grad.values)
+        g2 = tf.where(tf.is_inf(g1), tf.ones_like(g1) * epsilon, g1)
+        safe_grad = tf.IndexedSlices(g2, grad.indices, grad.dense_shape)
+        return safe_grad
+
     def modify_grads(self, grads, radius):
         """
         Divide the theta co-ord by r to get the gradient component in the theta direction. This can go wrong for r~0 so
@@ -108,12 +120,13 @@ class cust2vec():
         self._lr = lr
         optimizer = tf.train.GradientDescentOptimizer(lr)
         # grads = optimizer.compute_gradients(loss, [self.sm_b, self.r_in, self.r_out])
-        sm_b_grad, radius_in_grad, radius_out_grad = optimizer.compute_gradients(loss, [self.sm_b, self.radius_in,
-                                                                                        self.radius_out])
+        grads = optimizer.compute_gradients(loss, [self.sm_b, self.radius_in,
+                                                   self.radius_out])
+        sm_b_grad, radius_in_grad, radius_out_grad = [(self.remove_nan(grad), var) for grad, var in grads]
+
         sm_b_grad_hist = tf.summary.histogram('sm_b_grad', sm_b_grad[0])
         radius_in_grad_hist = tf.summary.histogram('radius_in_grad', radius_in_grad[0])
         radius_out_grad_hist = tf.summary.histogram('radius_out_grad', radius_out_grad[0])
-
 
         theta_out_grad = optimizer.compute_gradients(loss, [self.theta_out])
         theta_in_grad = optimizer.compute_gradients(loss, [self.theta_in])
@@ -455,7 +468,6 @@ def karate_results(embeddings, names, n_reps, train_size):
 
 
 def karate_test_scenario(deepwalk_path):
-
     y_path = '../../local_resources/karate/y.p'
     x_path = '../../local_resources/karate/X.p'
 
