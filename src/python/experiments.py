@@ -659,8 +659,9 @@ def simulated_tree_scenario(branching_factor, levels):
 
 
 if __name__ == '__main__':
-    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
-    nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
+    iclr_experiment_runner(folder='ICLR', learning_rate=0.2)
+    # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
+    # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
     # path = '../../local_resources/simulated_trees/X_z4_l5.p'
     # for z in xrange(3, 5):
     #     for l in xrange(3, 6):

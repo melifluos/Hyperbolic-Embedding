@@ -512,7 +512,7 @@ def iclr_test_train_split_scenario(folder, polar_embedding_path, cartesian_embed
 
     x, y = utils.read_data(x_path, y_path, threshold=0)
 
-    names = ['hyperbolic']
+    names = ['hybed', 'poincare']
     names = np.array(names + deepwalk_names)
 
     polar_embedding = pd.read_csv(polar_embedding_path, index_col=0)

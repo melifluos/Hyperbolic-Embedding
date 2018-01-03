@@ -73,12 +73,13 @@ def plot_lines_from_df(name, meanpath, errpath, outpath):
         styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
     else:
         styles = ['bo-', 'yo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
-    ax = means_t.plot(style=styles, legend=legend, kind='line')
+    ax = means_t.plot(style=styles, legend=legend, kind='line', fontsize=20)
+
     # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
     # ax.legend(bbox_to_anchor=(1.3, 1.05))
     ax = plot_error_bars(ax, means_t.values, errors_t.values, styles)
-    ax.set_xlabel("fraction of labeled data")
-    ax.set_ylabel("macro F1")
+    ax.set_xlabel("fraction of labeled data", size=22)
+    ax.set_ylabel("macro F1", size=22)
     plt.savefig(outpath)
 
 
