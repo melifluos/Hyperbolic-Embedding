@@ -451,7 +451,7 @@ def run_repetitions(X, y, names, clf, reps, train_pct=0.8):
 def run_test_train_split_scenario(folder, embedding_path):
     """
     Compare the hyperbolic embeddings to DeepWalk embeddings of dimension 2-128
-    :param folder:
+    :param folder: name of the folder containing the raw data
     :param embedding_path:
     :return:
     """
@@ -475,6 +475,49 @@ def run_test_train_split_scenario(folder, embedding_path):
 
     embedding = pd.read_csv(embedding_path, index_col=0)
     X = [embedding.values] + deepwalk_embeddings
+    nreps = 10
+    splits = np.linspace(0.1, 0.9, 9)
+    means = pd.DataFrame(columns=splits, index=names)
+    errors = pd.DataFrame(columns=splits, index=names)
+    for pct in splits:
+        print 'running {0} for training split {1}'.format(folder, pct)
+        results = run_repetitions(X, y, names, classifiers[0], nreps, train_pct=pct)
+        means.loc[:, pct] = results['mean']
+        errors.loc[:, pct] = results['sde']
+    print means
+    print errors
+    return means, errors
+
+
+def iclr_test_train_split_scenario(folder, polar_embedding_path, cartesian_embedding_path):
+    """
+    Compare the hyperbolic embeddings to DeepWalk embeddings of dimension 2-128
+    :param folder: name of the folder containing the raw data
+    :param polar_embedding_path: path to our polar embedding
+    :param cartesian_embedding_path: path to the cartesian embedding of Nickel
+    :return:
+    """
+    y_path = '../../local_resources/{}/y.p'.format(folder)
+    x_path = '../../local_resources/{}/X.p'.format(folder)
+    sizes = [2, 4, 8, 16, 32, 64, 128]
+    deepwalk_embeddings = []
+    deepwalk_names = []
+    dwpath = '../../local_resources/{0}/{1}'.format(folder, folder)
+    for size in sizes:
+        path = dwpath + str(size) + '.emd'
+        de = pd.read_csv(path, header=None, index_col=0, skiprows=1, sep=" ")
+        de.sort_index(inplace=True)
+        deepwalk_embeddings.append(de.values)
+        deepwalk_names.append('deepwalk' + str(size))
+
+    x, y = utils.read_data(x_path, y_path, threshold=0)
+
+    names = ['hyperbolic']
+    names = np.array(names + deepwalk_names)
+
+    polar_embedding = pd.read_csv(polar_embedding_path, index_col=0)
+    cartesian_embedding = pd.read_csv(cartesian_embedding_path, index_col=0)
+    X = [polar_embedding.values, cartesian_embedding.values] + deepwalk_embeddings
     nreps = 10
     splits = np.linspace(0.1, 0.9, 9)
     means = pd.DataFrame(columns=splits, index=names)

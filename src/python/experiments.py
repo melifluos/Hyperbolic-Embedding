@@ -486,6 +486,8 @@ def nips_experiment_runner(module, folder, learning_rate):
     """
     runs the experiments on small graphs submitted to NIPS and MLG
     :param module: The module for the relevant type of embeddings eg. HE for Hyperbolic Embedding
+    :param folder: The folder to write the output to
+    :param learning_rate: The initial learning rate for the optimizer
     :return: None
     """
     from visualisation import plot_lines_from_df
@@ -497,6 +499,31 @@ def nips_experiment_runner(module, folder, learning_rate):
         mean_path = '../../results/all/{}_means_{}.csv'.format(name, utils.get_timestamp())
         error_path = '../../results/all/{}_errors_{}.csv'.format(name, utils.get_timestamp())
         means, errors = MLD.run_test_train_split_scenario(name, embedding_path)
+        means.to_csv(mean_path)
+        errors.to_csv(error_path)
+        outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format(folder, name, utils.get_timestamp())
+        plot_lines_from_df(name, mean_path, error_path, outpath)
+        # plot_lines_from_df(name, means, errors, outpath)
+
+
+def iclr_experiment_runner(module, folder, learning_rate):
+    """
+    runs the experiments on small graphs submitted to NIPS and MLG
+    :param module: The module for the relevant type of embeddings eg. HE for Hyperbolic Embedding
+    :param folder: The folder to write the output to
+    :param learning_rate: The initial learning rate for the optimizer
+    :return: None
+    """
+    from visualisation import plot_lines_from_df
+    names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
+    # names = ['karate']
+
+    for name in names:
+        polar_embedding_path = run_embedding(name, learning_rate, run_scenario=False, module=HE)
+        cartesian_embedding_path = run_embedding(name, learning_rate, run_scenario=False, module=HCE)
+        mean_path = '../../results/all/{}_means_{}.csv'.format(name, utils.get_timestamp())
+        error_path = '../../results/all/{}_errors_{}.csv'.format(name, utils.get_timestamp())
+        means, errors = MLD.iclr_test_train_split_scenario(name, polar_embedding_path, cartesian_embedding_path)
         means.to_csv(mean_path)
         errors.to_csv(error_path)
         outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format(folder, name, utils.get_timestamp())
@@ -630,13 +657,13 @@ def simulated_tree_scenario(branching_factor, levels):
 
 
 if __name__ == '__main__':
-    path = '../../local_resources/simulated_trees/X_z4_l5.p'
-    for z in xrange(3, 5):
-        for l in xrange(3, 6):
-            simulated_tree_scenario(z, l)
+    nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
+    nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
+    # path = '../../local_resources/simulated_trees/X_z4_l5.p'
+    # for z in xrange(3, 5):
+    #     for l in xrange(3, 6):
+    #         simulated_tree_scenario(z, l)
             # deepwalk_path = '../../local_resources/karate/karate128.emd'
             # karate_test_scenario(deepwalk_path)
             # generate_karate_embedding()
             # batch_size_scenario()
-            nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
-            # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
