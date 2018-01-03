@@ -638,5 +638,5 @@ if __name__ == '__main__':
             # karate_test_scenario(deepwalk_path)
             # generate_karate_embedding()
             # batch_size_scenario()
-            # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
+            nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
             # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
