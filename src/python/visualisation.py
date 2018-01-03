@@ -35,20 +35,28 @@ def tsne_plot(X, y):
     plt.show()
 
 
-def plot_error_bars(ax, data, sde):
+def plot_error_bars(ax, data, sde, styles):
     xvals = np.arange(0, 9, 1)
-    for idx in range(data.shape[1]):
-        if idx == 0:
-            col = 'b'
-        else:
-            col = 'r'
+    for idx, style in enumerate(styles):
+        col = style[0]
+        # if idx == 0:
+        #     col = 'b'
+        # else:
+        #     col = 'r'
         ax.fill_between(xvals.T, data[:, idx] - sde[:, idx], data[:, idx] + sde[:, idx], interpolate=True, alpha=0.1,
                         color=col)
     return ax
 
 
 def plot_lines_from_df(name, meanpath, errpath, outpath):
-    styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
+    """
+    generate a set of line plots
+    :param name: the name of the dataset
+    :param meanpath: path to the csv of mean F1 scores
+    :param errpath: path to the csv of standard errors from cross-validation
+    :param outpath: path to writ the figures to
+    :return:
+    """
     if name == 'football':
         legend = True
     else:
@@ -59,10 +67,16 @@ def plot_lines_from_df(name, meanpath, errpath, outpath):
     # meanpath = '../../results/all/{}_means.csv'.format(name)
     errors_t = pd.read_csv(errpath, index_col=0).transpose()
     means_t = pd.read_csv(meanpath, index_col=0).transpose()
+    # if means_t.shape
+    nrows, ncols = means_t.shape
+    if ncols == 8:
+        styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
+    else:
+        styles = ['bo-', 'yo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
     ax = means_t.plot(style=styles, legend=legend, kind='line')
     # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
     # ax.legend(bbox_to_anchor=(1.3, 1.05))
-    ax = plot_error_bars(ax, means_t.values, errors_t.values)
+    ax = plot_error_bars(ax, means_t.values, errors_t.values, styles)
     ax.set_xlabel("fraction of labeled data")
     ax.set_ylabel("macro F1")
     plt.savefig(outpath)
@@ -245,7 +259,12 @@ def plot_deepwalk_nips_graphs():
 
 
 if __name__ == '__main__':
-    plot_deepwalk_nips_graphs()
+    name = 'football'
+    errpath = '../../results/all/football_errors_20180103-103042.csv'
+    meanpath = '../../results/all/football_means_20180103-103042.csv'
+    outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format('ICLR', name, utils.get_timestamp())
+    plot_lines_from_df(name, meanpath, errpath, outpath)
+    # plot_deepwalk_nips_graphs()
     # emd_path = '../../local_resources/karate/karate2.emd'
     # x_path = '../../local_resources/karate/X.p'
     # y_path = '../../local_resources/karate/y.p'
