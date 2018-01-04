@@ -180,7 +180,7 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True, max_label
     plt.clf()
 
 
-def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
+def plot_deepwalk_embedding(embedding, labels, path, annotate=True, max_labels=30):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
@@ -209,11 +209,11 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
-    if len(y) > 200:
+    if len(y) > max_labels:
         annotate = False
         print 'turning off label annotation as there are {} vertices'.format(len(y))
 
-    fg, ax = plt.subplots(1, 1)
+    fg, ax = plt.subplots(1, 1, figsize=(8, 8))
     ax.scatter(x, y, c=colours, alpha=0.5, s=50)  # plot points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
@@ -228,7 +228,7 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
         tick.label.set_fontsize(20)
     for tick in ax.yaxis.get_major_ticks():
         tick.label.set_fontsize(20)
-    plt.savefig(path)
+    plt.savefig(path, bbox_inches='tight')
     plt.clf()
 
 
@@ -282,7 +282,7 @@ if __name__ == '__main__':
     # meanpath = '../../results/all/polbooks_means_20180103-140903.csv'
     # outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format('ICLR', name, utils.get_timestamp())
     # plot_lines_from_df(name, meanpath, errpath, outpath)
-    # plot_deepwalk_nips_graphs()
+    plot_deepwalk_nips_graphs()
     # emd_path = '../../local_resources/karate/karate2.emd'
     # x_path = '../../local_resources/karate/X.p'
     # y_path = '../../local_resources/karate/y.p'
@@ -291,13 +291,13 @@ if __name__ == '__main__':
     # emdv = emd.values
     # outpath = '../../results/all/lineplots/ICLR/test.pdf'
 
-    y = generate_y(4, 3)
-    path = '../../local_resources/simulated_trees/embeddings/Win_20170908-153023.csv'
-    df = pd.read_csv(path, index_col=0)
-    embedding_in = df.values
-    plot_poincare_embedding(embedding_in, y,
-                            '../../results/simulated_trees/figs/hyp_z{}_l{}_{}.pdf'.format(
-                                4, 3, utils.get_timestamp()))
+    # y = generate_y(4, 3)
+    # path = '../../local_resources/simulated_trees/embeddings/Win_20170908-153023.csv'
+    # df = pd.read_csv(path, index_col=0)
+    # embedding_in = df.values
+    # plot_poincare_embedding(embedding_in, y,
+    #                         '../../results/simulated_trees/figs/hyp_z{}_l{}_{}.pdf'.format(
+    #                             4, 3, utils.get_timestamp()))
 
     # deepwalk_path = '../../local_resources/simulated_trees/deepwalk_z{}_l{}.emd'.format(4, 3)
     # deepwalk_emd = pd.read_csv(deepwalk_path, header=None, index_col=0, skiprows=1, sep=" ")
