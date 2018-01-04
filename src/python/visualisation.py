@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
 from numpy import linspace
+from generate_tree import generate_y
 
 
 def tsne_plot(X, y):
@@ -57,7 +58,8 @@ def plot_lines_from_df(name, meanpath, errpath, outpath):
     :param outpath: path to writ the figures to
     :return:
     """
-    if name == 'football':
+    # if name == 'football':
+    if name == 'karate':
         legend = True
     else:
         legend = False
@@ -73,7 +75,10 @@ def plot_lines_from_df(name, meanpath, errpath, outpath):
         styles = ['bo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
     else:
         styles = ['bo-', 'yo-', 'ro--', 'ro-.', 'ro:', 'rs-', 'rs--', 'rs-.', 'rs:']
+
     ax = means_t.plot(style=styles, legend=legend, kind='line', fontsize=20)
+    if legend:
+        ax.legend(fontsize=20, loc=0, labelspacing=0.2)
 
     # ax = means.transpose().plot(yerr=errors.transpose(), kind='line', legend=False)
     # ax.legend(bbox_to_anchor=(1.3, 1.05))
@@ -112,7 +117,7 @@ def plot_embedding(embedding, labels, path):
     plt.clf()
 
 
-def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
+def plot_poincare_embedding(embedding, labels, outpath, annotate=True, max_labels=30):
     """
     plots the hyperbolic embedding on the Poincare disc
     :param embedding: A numpy array of size (ndata, 2) with columns (r, theta)
@@ -141,7 +146,7 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
     x = embedding[:, 0]
     y = embedding[:, 1]
 
-    if len(y) > 200:
+    if len(y) > max_labels:
         annotate = False
         print 'turning off label annotation as there are {} vertices'.format(len(y))
 
@@ -149,20 +154,29 @@ def plot_poincare_embedding(embedding, labels, outpath, annotate=True):
     a = np.linspace(0, 2 * np.pi, 500)
     cx, cy = np.cos(a), np.sin(a)
 
-    fg, ax = plt.subplots(1, 1)
+    # plt.axis('equal')
+    fg, ax = plt.subplots(1, 1, figsize=(8, 8))
+    # plt.xlim(-1,1)
     ax.plot(cx, cy, '-', alpha=.5)  # draw unit circle line
-    ax.scatter(x, y, c=colours, alpha=0.5, s=50)  # plot random points
+    ax.scatter(x, y, c=colours, alpha=0.5, s=50)  # plot points
     if annotate:
         vert_labs = xrange(1, len(labels) + 1)
         for vert_lab, x, y in zip(vert_labs, x, y):
             plt.annotate(
                 vert_lab,
                 xy=(x, y), xytext=(-3, 3),
-                textcoords='offset points', ha='right', va='bottom', fontsize=10)
+                textcoords='offset points', ha='right', va='bottom', fontsize=14)
     ax.axis('equal')
     ax.grid(True)
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label.set_fontsize(20)
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(20)
     # fg.canvas.draw()
-    plt.savefig(outpath)
+    ax.set_xbound(-1.05, 1.05)
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ybound(-1.05, 1.05)
+    plt.savefig(outpath, bbox_inches='tight')
     plt.clf()
 
 
@@ -207,10 +221,13 @@ def plot_deepwalk_embedding(embedding, labels, path, annotate=True):
             plt.annotate(
                 vert_lab,
                 xy=(x, y), xytext=(-3, 3),
-                textcoords='offset points', ha='right', va='bottom', fontsize=10)
+                textcoords='offset points', ha='right', va='bottom', fontsize=14)
     ax.axis('equal')
     ax.grid(True)
-    # fg.canvas.draw()
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label.set_fontsize(20)
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label.set_fontsize(20)
     plt.savefig(path)
     plt.clf()
 
@@ -260,11 +277,11 @@ def plot_deepwalk_nips_graphs():
 
 
 if __name__ == '__main__':
-    name = 'football'
-    errpath = '../../results/all/football_errors_20180103-103042.csv'
-    meanpath = '../../results/all/football_means_20180103-103042.csv'
-    outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format('ICLR', name, utils.get_timestamp())
-    plot_lines_from_df(name, meanpath, errpath, outpath)
+    # name = 'polbooks'
+    # errpath = '../../results/all/polbooks_errors_20180103-140903.csv'
+    # meanpath = '../../results/all/polbooks_means_20180103-140903.csv'
+    # outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format('ICLR', name, utils.get_timestamp())
+    # plot_lines_from_df(name, meanpath, errpath, outpath)
     # plot_deepwalk_nips_graphs()
     # emd_path = '../../local_resources/karate/karate2.emd'
     # x_path = '../../local_resources/karate/X.p'
@@ -272,5 +289,20 @@ if __name__ == '__main__':
     # X, y = utils.read_data(x_path, y_path)
     # emd = pd.read_csv(emd_path, header=None, index_col=0, skiprows=1, sep=" ")
     # emdv = emd.values
-    # outpath = '../../results/karate/karate2.pdf'
+    # outpath = '../../results/all/lineplots/ICLR/test.pdf'
+
+    y = generate_y(4, 3)
+    path = '../../local_resources/simulated_trees/embeddings/Win_20170908-153023.csv'
+    df = pd.read_csv(path, index_col=0)
+    embedding_in = df.values
+    plot_poincare_embedding(embedding_in, y,
+                            '../../results/simulated_trees/figs/hyp_z{}_l{}_{}.pdf'.format(
+                                4, 3, utils.get_timestamp()))
+
+    # deepwalk_path = '../../local_resources/simulated_trees/deepwalk_z{}_l{}.emd'.format(4, 3)
+    # deepwalk_emd = pd.read_csv(deepwalk_path, header=None, index_col=0, skiprows=1, sep=" ")
+    #
+    # plot_deepwalk_embedding(deepwalk_emd.values, y,
+    #                                       '../../results/simulated_trees/figs/deepwalk_z{}_l{}_{}.pdf'.format(
+    #                                           4, 3, utils.get_timestamp()))
     # plot_poincare_embedding(emdv, y, outpath, annotate=True)

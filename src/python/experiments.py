@@ -33,6 +33,7 @@ import multilabel_detectors as MLD
 import euclidean_cartesian as EC
 from generate_tree import create_adj_mat, generate_y
 from graph import generate_simulated_tree
+from os import listdir
 
 classifiers = [
     LogisticRegression(multi_class='multinomial', solver='lbfgs', n_jobs=1, max_iter=1000, C=1.8)]
@@ -508,10 +509,9 @@ def nips_experiment_runner(module, folder, learning_rate):
         # plot_lines_from_df(name, means, errors, outpath)
 
 
-def iclr_experiment_runner(folder, learning_rate):
+def iclr_experiment_runner(folder, learning_rates):
     """
     runs the experiments on small graphs submitted to NIPS and MLG
-    :param module: The module for the relevant type of embeddings eg. HE for Hyperbolic Embedding
     :param folder: The folder to write the output to
     :param learning_rate: The initial learning rate for the optimizer
     :return: None
@@ -519,10 +519,12 @@ def iclr_experiment_runner(folder, learning_rate):
     from visualisation import plot_lines_from_df
     names = ['football', 'adjnoun', 'polbooks', 'political_blogs', 'karate']
     # names = ['karate']
+    # names = ['polbooks']
+    # names = ['football']
 
     for name in names:
-        polar_embedding_path = run_embedding(name, learning_rate, run_scenario=False, module=HE)
-        cartesian_embedding_path = run_embedding(name, learning_rate, run_scenario=False, module=HCE)
+        polar_embedding_path = run_embedding(name, learning_rates[0], run_scenario=False, module=HE)
+        cartesian_embedding_path = run_embedding(name, learning_rates[1], run_scenario=False, module=HCE)
         mean_path = '../../results/all/{}_means_{}.csv'.format(name, utils.get_timestamp())
         error_path = '../../results/all/{}_errors_{}.csv'.format(name, utils.get_timestamp())
         means, errors = MLD.iclr_test_train_split_scenario(name, polar_embedding_path, cartesian_embedding_path)
@@ -531,6 +533,18 @@ def iclr_experiment_runner(folder, learning_rate):
         outpath = '../../results/all/lineplots/{}/{}_{}.pdf'.format(folder, name, utils.get_timestamp())
         plot_lines_from_df(name, mean_path, error_path, outpath)
         # plot_lines_from_df(name, means, errors, outpath)
+
+
+def mean_F1(folder):
+    """
+    NOT IMPLEMENTED YET
+    Gets the mean F1 for each embedding across all experiments
+    :param folder: the location of the csv files containing the results to be averaged
+    :return:
+    """
+    files = listdir(folder)
+    for file in files:
+        df = pd.read_csv(file)
 
 
 def plot_deepwalk_embeddings():
@@ -659,14 +673,14 @@ def simulated_tree_scenario(branching_factor, levels):
 
 
 if __name__ == '__main__':
-    iclr_experiment_runner(folder='ICLR', learning_rate=0.2)
+    iclr_experiment_runner(folder='ICLR', learning_rates=[1.0, 0.2])
     # nips_experiment_runner(module=HCE, folder='cartesian', learning_rate=0.2)
     # nips_experiment_runner(module=HE, folder='polar', learning_rate=1)
-    # path = '../../local_resources/simulated_trees/X_z4_l5.p'
+    # path = '../../local_resources/simulated_trees/X_z4_l3.p'
     # for z in xrange(3, 5):
     #     for l in xrange(3, 6):
     #         simulated_tree_scenario(z, l)
-            # deepwalk_path = '../../local_resources/karate/karate128.emd'
-            # karate_test_scenario(deepwalk_path)
-            # generate_karate_embedding()
-            # batch_size_scenario()
+    # deepwalk_path = '../../local_resources/karate/karate128.emd'
+    # karate_test_scenario(deepwalk_path)
+    # generate_karate_embedding()
+    # batch_size_scenario()
