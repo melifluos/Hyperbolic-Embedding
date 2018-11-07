@@ -1,0 +1,1 @@
+Plots submitted to NIPS. At this time the polar embedding code had a bug that prevented the radial components of the vectors from changing.

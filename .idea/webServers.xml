@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="99542571-6f30-4c71-b8e8-5a644266d809" name="GPU_VM" url="http://bc2.eastus.cloudapp.azure.com">
+        <fileTransfer host="bc2.eastus.cloudapp.azure.com" port="22" privateKey="$USER_HOME$/.ssh/id_rsa" rootFolder="/home/ds" accessType="SFTP" username="ds" keyPair="true">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
