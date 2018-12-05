@@ -1,5 +1,5 @@
 """
-neural embeddings on the hyperboloid model
+neural embeddings on the hyperboloid model.
 """
 
 from __future__ import absolute_import
@@ -76,6 +76,18 @@ class cust2vec():
     def sinh(self, x):
         return 0.5 * (tf.subtract(tf.exp(x), tf.exp(-x)))
 
+    def transform_grads(self, grad):
+        """
+        multiply by the inverse of the Minkowski metric tensor g = diag[-1, 1,1 ... 1] to make the first element of each
+        grad vector negative
+        :param grad: grad matrix of shape (n_vars, embedding_dim)
+        :return:
+        """
+        x = np.eye(grad.shape[1])
+        x[0, 0] = -1
+        T = tf.constant(x, dtype=tf.int32)
+        return tf.matmul(grad, T)
+
     def modify_grads(self, grads, emb):
         """
         The tensor flow autograd gives us Euclidean gradients. Here we multiply by (1/4)(1-||emb||^2)^2
@@ -92,6 +104,77 @@ class cust2vec():
         g = tf.multiply(grad.values, hyperbolic_factor)
         scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
         return scaled_grad, name
+
+    def rsgd(self, grads, var, lr):
+        """
+        Perform the Riemannian gradient descent operation by
+        1/ Transforming gradients using the Minkowski metric tensor
+        2/ Projecting onto the tangent space
+        3/ Applying the exponential map
+        :param grad:
+        :param var:
+        :param lr:
+        :return:
+        """
+        grad, name = grads
+        minkowski_grads = self.transform_grads(grad)
+        vecs = tf.nn.embedding_lookup(var, grad.indices)
+        tangent_grads = self.project_onto_tangent_space(vecs, minkowski_grads)
+        # CHECK THIS - YOU DID IT AFTER HOLIDAY
+        return self.exp_map(vecs, tangent_grads)
+
+    def minkowski_dot(self, u, v):
+        """
+        Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
+        :param u: a vector
+        :param v: a vector
+        :return: a scalar dot product
+        """
+        return tf.tensordot(u, v, 1) - 2 * tf.multiply(u[0], v[0])
+
+    def minkowski_dist(self, u, v):
+        """
+        The distance between two points in Minkowski space
+        :param u:
+        :param v:
+        :return:
+        """
+        return tf.acosh(-self.minkowski_dot(u, v))
+
+    def project_onto_tangent_space(self, hyperboloid_point, minkowski_tangent):
+        """
+        project gradients in the ambiant space onto the tangent space
+        :param hyperboloid_point:
+        :param minkowski_tangent:
+        :return:
+        """
+        return minkowski_tangent + self.minkowski_dot(hyperboloid_point, minkowski_tangent) * hyperboloid_point
+
+    def exp_map(self, base, tangent):
+        """
+        Compute the exponential of the `tangent` vector from the point `base`.
+        """
+        # tangent = tangent.copy()
+        norm = tf.sqrt(tf.maximum(self.minkowski_dot(tangent, tangent), 0))
+        if norm == 0:
+            return base
+        tangent /= norm
+        return tf.cosh(norm) * base + tf.sinh(norm) * tangent
+
+    def pairwise_distance(self, examples, samples):
+        """
+        creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param samples: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+        """
+        xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
+        ynorm_sq = tf.reduce_sum(tf.square(samples), axis=1)
+        # use the expanded version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
+        euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
+        denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
+        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
+        return hyp_dist
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -188,10 +271,16 @@ class cust2vec():
             modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0])
 
             gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
+            vars = [self.sm_b, self.emb, self.sm_w_t]
 
-            # gv = sm_b_grad + emb_grad + sm_w_t_grad
-            # gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
-            self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
+            all_update_ops = []
+            for var, grad in zip(vars, gv):
+                # get riemannian factor
+                # rescale grad
+                all_update_ops.append(tf.assign(var, self.rsgd(var, grad, lr)))
+
+            # self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
+            self._train = tf.group(*all_update_ops)
 
     def build_graph(self):
         """
@@ -326,7 +415,7 @@ class cust2vec():
         """
         xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
         ynorm_sq = tf.reduce_sum(tf.square(samples), axis=1)
-        # use the multiplied out version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
+        # use the expanded version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
         euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
         denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
         hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
@@ -338,8 +427,6 @@ class cust2vec():
         opts = self._options
         with tf.name_scope('model'):
             init_width = 0.5 / opts.embedding_size
-            # emb = np.random.uniform(low=-init_width, high=init_width,
-            #                         size=(opts.vocab_size, opts.embedding_size)).astype(np.float32)
 
             self.emb = tf.Variable(
                 tf.random_uniform(
@@ -347,11 +434,6 @@ class cust2vec():
                 name="emb")
 
             emb_hist = tf.summary.histogram('embedding', self.emb)
-
-            # Softmax weight: [vocab_size, emb_dim]. Transposed.
-            # self.sm_w_t = tf.Variable(
-            #     tf.zeros([opts.vocab_size, opts.embedding_size]),
-            #     name="sm_w_t")
 
             self.sm_w_t = tf.Variable(
                 tf.random_uniform(
