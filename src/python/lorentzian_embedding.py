@@ -121,7 +121,7 @@ class cust2vec():
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_onto_tangent_space(vecs, minkowski_grads)
         # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        return self.exp_map(vecs, tangent_grads)
+        return self.exp_map(vecs, lr*tangent_grads)
 
     def minkowski_dot(self, u, v):
         """
