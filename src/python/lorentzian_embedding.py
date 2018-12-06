@@ -111,7 +111,7 @@ class cust2vec():
         1/ Transforming gradients using the Minkowski metric tensor
         2/ Projecting onto the tangent space
         3/ Applying the exponential map
-        :param grad:
+        :param grads:
         :param var:
         :param lr:
         :return:
@@ -152,7 +152,7 @@ class cust2vec():
 
     def exp_map(self, base, tangent):
         """
-        Compute the exponential of the `tangent` vector from the point `base`.
+        Map a vector 'tangent' from the tangent space at point 'base' onto the manifold.
         """
         # tangent = tangent.copy()
         norm = tf.sqrt(tf.maximum(self.minkowski_dot(tangent, tangent), 0))
