@@ -157,11 +157,11 @@ def test_gradient_transform_matrix():
     grads come in a matrix of shape (n_vars, embedding_dim)
     :return:
     """
-    grads = tf.Variable(np.array([[1, 2], [3, 4], [4, 2]]), dtype=tf.int32)
-    true_val = np.array([[-1, 2], [-3, 4], [-4, 2]])
+    grads = tf.Variable(np.array([[1., 2., 0.2], [3., 4., 0.5], [4., 2., 0.6]]))
+    true_val = np.array([[-1., 2., 0.2], [-3., 4., 0.5], [-4., 2., 0.6]])
     x = np.eye(grads.shape[1])
-    x[0, 0] = -1
-    T = tf.constant(x, dtype=tf.int32)
+    x[0, 0] = -1.
+    T = tf.constant(x, dtype=tf.float64)
     U = tf.matmul(grads, T)
     sess = tf.Session()
     init = tf.global_variables_initializer()
