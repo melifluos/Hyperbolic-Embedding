@@ -15,13 +15,37 @@ import tensorflow as tf
 import math
 
 
-def minkowski_dot(u, v):
+def minkowski_tensor_dot(u, v):
     """
     Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
     :param u: a vector
     :param v: a vector
     :return: a scalar dot product
     """
+    assert u.shape == v.shape, 'minkowski dot product not define for different shape tensors'
+    try:
+        temp = np.eye(u.shape[1])
+    except IndentationError:
+        temp = np.eye(u.shape)
+    temp[0, 0] = -1.
+    T = tf.constant(temp, dtype=u.dtype)
+    # make the first column of v negative
+    v_neg = tf.matmul(v, T)
+    return tf.reduce_sum(tf.multiply(u, v_neg), 1)
+
+
+def minkowski_vector_dot(u, v):
+    """
+        Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
+        :param u: a vector
+        :param v: a vector
+        :return: a scalar dot product
+        """
+    assert u.shape == v.shape, 'minkowski dot product not define for different shape vectors'
+    # assert that the vectors have only 1d.
+    # todo this currently fails because exp_map returns tensors with shape = None
+    # assert u.get_shape().ndims == 1, 'applied minkowski_vector_dot to a tensor. Try using minkowski_tensor_dot'
+
     return tf.tensordot(u, v, 1) - 2 * tf.multiply(u[0], v[0])
 
 
@@ -32,7 +56,7 @@ def minkowski_dist(u, v):
     :param v:
     :return:
     """
-    return tf.acosh(-minkowski_dot(u, v))
+    return tf.acosh(-minkowski_vector_dot(u, v))
 
 
 def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
@@ -42,14 +66,14 @@ def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
     :param ambient_gradient: The gradient to project
     :return:
     """
-    return ambient_gradient + minkowski_dot(hyperboloid_point, ambient_gradient) * hyperboloid_point
+    return ambient_gradient + minkowski_vector_dot(hyperboloid_point, ambient_gradient) * hyperboloid_point
 
 
 def exp_map(base, tangent):
     """
     Map a vector 'tangent' from the tangent space at point 'base' onto the manifold.
     """
-    norm = tf.sqrt(tf.maximum(minkowski_dot(tangent, tangent), 0))
+    norm = tf.sqrt(tf.maximum(minkowski_vector_dot(tangent, tangent), 0))
     if norm == 0:
         return base
     tangent /= norm
@@ -95,13 +119,16 @@ def test_exp_map():
     init = tf.global_variables_initializer()
     sess.run(init)
     # here the tangent space is x=1
+    em1 = exp_map(p1, g1)
+    em2 = exp_map(p1, g2)
+    em3 = exp_map(p1, g3)
+    # check that the points are on the hyperboloid
+    assert round(sess.run(minkowski_vector_dot(em1, em1)), 4) == -1.
+    assert round(sess.run(minkowski_vector_dot(em2, em2)), 4) == -1.
+    assert round(sess.run(minkowski_vector_dot(em3, em3)), 4) == -1.
     em1 = sess.run(exp_map(p1, g1))
     em2 = sess.run(exp_map(p1, g2))
     em3 = sess.run(exp_map(p1, g3))
-    # check that the points are on the hyperboloid
-    assert round(sess.run(minkowski_dot(em1, em1)), 4) == -1.
-    assert round(sess.run(minkowski_dot(em2, em2)), 4) == -1.
-    assert round(sess.run(minkowski_dot(em3, em3)), 4) == -1.
     assert em1[0] == em2[0]
     assert em1[1] == -em2[1]
     assert em3[0] > em1[0]
@@ -115,15 +142,29 @@ def test_exp_map():
     # assert np.array_equal(temp1, temp2)
 
 
-def test_minkowski_dot():
-    u = tf.constant([1., 0])
-    v = tf.constant([1., 0])
-    x = tf.constant([10., 0])
+def test_minkowski_vector_dot():
+    u1 = tf.constant([1., 0])
+    v1 = tf.constant([1., 0])
+    v2 = tf.constant([10., 0])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
-    assert sess.run(minkowski_dot(u, v)) == -1
-    assert sess.run(minkowski_dot(v, x)) == -10
+    assert sess.run(minkowski_vector_dot(u1, v1)) == -1
+    assert sess.run(minkowski_vector_dot(u1, v2)) == -10
+
+
+def test_minkowski_tensor_dot():
+    u1 = tf.constant([[1., 0., 1.], [1., 1., 1.]], dtype=tf.float32)
+    v1 = tf.constant([[1., 1., 1.], [0., 0., 1.]], dtype=tf.float32)
+    v2 = tf.constant([[2., 1., 1.], [2., 0., 1.]], dtype=tf.float32)
+    retval1 = np.array([0., 1.])
+    retval2 = np.array([-1., -1.])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
+    assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
+
 
 
 def test_minkowski_dist():
