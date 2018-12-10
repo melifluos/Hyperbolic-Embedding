@@ -91,6 +91,21 @@ def exp_map(base, tangent):
     return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
 
+def tensor_exp_map(hyperboloid_points, tangent_grads):
+    """
+    Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+    :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+    :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+    :return:
+    """
+
+    norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+    # if norms == 0:
+    #     return hyperboloid_points
+    normed_grads = tf.divide(tangent_grads, norms)
+    return tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms), normed_grads)
+
+
 def test_project_onto_tangent_space():
     """
     Remember that we negate the first co-ordinate, so in 2D the hyperboloid appears rotated 90 degrees clockwise from how it is normally drawn
@@ -159,12 +174,48 @@ def test_exp_map():
     assert em3[0] > em1[0]
     assert em3[1] > em1[1]
 
-    # consecutive projections don't change values
-    s = tf.constant([math.sqrt(5), 2])  # point on hyperboloid
-    t = tf.constant([6.2, 3.2])  # random grad
-    temp1 = sess.run(project_onto_tangent_space(s, t))
-    temp2 = sess.run(project_onto_tangent_space(s, temp1))
-    assert np.array_equal(temp1, temp2)
+
+def test_moving_along_hyperboloid():
+    """
+    test multiple series of e
+    :return:
+    """
+    p1 = tf.constant([[1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.]])
+    retval1 = np.array([[-1.], [-1.], [-1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    for i in range(10):
+        em = tensor_exp_map(p1, g1)
+        # check that the points are on the hyperboloid
+        norms = minkowski_tensor_dot(em, em)
+        assert np.array_equal(np.around(sess.run(norms), 3), retval1)
+        p1 = em
+        g1 = project_tensors_onto_tangent_space(p1, g1)
+
+
+def test_tensor_exp_map():
+    """
+    check that the exp_map takes vectors in the tangent space to the manifold
+    :return:
+    """
+    p1 = tf.constant([[1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.]])
+    retval1 = np.array([[-1.], [-1.], [-1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    # here the tangent space is x=1
+    em1 = tensor_exp_map(p1, g1)
+    # check that the points are on the hyperboloid
+    norms = sess.run(minkowski_tensor_dot(em1, em1))
+    assert np.array_equal(np.around(norms, 3), retval1)
+    em1 = sess.run(tensor_exp_map(p1, g1))
+    assert em1[0, 0] == em1[1, 0]
+    assert em1[0, 1] == -em1[1, 1]
+    assert em1[2, 0] > em1[0, 0]
+    assert em1[2, 1] > em1[0, 1]
 
 
 def test_minkowski_vector_dot():
