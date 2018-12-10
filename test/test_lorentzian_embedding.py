@@ -18,8 +18,8 @@ import math
 def minkowski_tensor_dot(u, v):
     """
     Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
-    :param u: a vector
-    :param v: a vector
+    :param u: a tensor of shape (#examples, dims)
+    :param v: a tensor of shape (#examples, dims)
     :return: a scalar dot product
     """
     assert u.shape == v.shape, 'minkowski dot product not define for different shape tensors'
@@ -31,7 +31,7 @@ def minkowski_tensor_dot(u, v):
     T = tf.constant(temp, dtype=u.dtype)
     # make the first column of v negative
     v_neg = tf.matmul(v, T)
-    return tf.reduce_sum(tf.multiply(u, v_neg), 1)
+    return tf.reduce_sum(tf.multiply(u, v_neg), 1, keep_dims=True)  # keep dims for broadcasting
 
 
 def minkowski_vector_dot(u, v):
@@ -67,6 +67,17 @@ def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
     :return:
     """
     return ambient_gradient + minkowski_vector_dot(hyperboloid_point, ambient_gradient) * hyperboloid_point
+
+
+def project_tensors_onto_tangent_space(hyperboloid_points, ambient_gradients):
+    """
+    project gradients in the ambiant space onto the tangent space
+    :param hyperboloid_point: A point on the hyperboloid
+    :param ambient_gradient: The gradient to project
+    :return: gradients in the tangent spaces of the hyperboloid points
+    """
+    return ambient_gradients + tf.multiply(minkowski_tensor_dot(hyperboloid_points, ambient_gradients),
+                                           hyperboloid_points)
 
 
 def exp_map(base, tangent):
@@ -106,6 +117,20 @@ def test_project_onto_tangent_space():
     assert np.array_equal(temp1, temp2)
 
 
+def test_project_tensors_onto_tangent_space():
+    u1 = tf.constant([[1., 0.], [1., 0.], [1., 0.], [1., 0.]], dtype=tf.float32)
+    v1 = tf.constant([[1., 0.], [0., 1.], [0., -1.], [1., 1.]], dtype=tf.float32)
+    retval1 = np.array([[0., 0.], [0., 1.], [0., -1.], [0., 1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    assert np.array_equal(sess.run(project_tensors_onto_tangent_space(u1, v1)), retval1)
+    # consecutive projections don't change values
+    temp1 = sess.run(project_tensors_onto_tangent_space(u1, v1))
+    temp2 = sess.run(project_tensors_onto_tangent_space(u1, temp1))
+    assert np.array_equal(temp1, temp2)
+
+
 def test_exp_map():
     """
     check that the exp_map takes vectors in the tangent space to the manifold
@@ -135,11 +160,11 @@ def test_exp_map():
     assert em3[1] > em1[1]
 
     # consecutive projections don't change values
-    # s = tf.constant([math.sqrt(5), 2])  # point on hyperboloid
-    # t = tf.constant([6.2, 3.2])  # random grad
-    # temp1 = sess.run(project_onto_tangent_space(s, t))
-    # temp2 = sess.run(project_onto_tangent_space(s, temp1))
-    # assert np.array_equal(temp1, temp2)
+    s = tf.constant([math.sqrt(5), 2])  # point on hyperboloid
+    t = tf.constant([6.2, 3.2])  # random grad
+    temp1 = sess.run(project_onto_tangent_space(s, t))
+    temp2 = sess.run(project_onto_tangent_space(s, temp1))
+    assert np.array_equal(temp1, temp2)
 
 
 def test_minkowski_vector_dot():
@@ -157,14 +182,13 @@ def test_minkowski_tensor_dot():
     u1 = tf.constant([[1., 0., 1.], [1., 1., 1.]], dtype=tf.float32)
     v1 = tf.constant([[1., 1., 1.], [0., 0., 1.]], dtype=tf.float32)
     v2 = tf.constant([[2., 1., 1.], [2., 0., 1.]], dtype=tf.float32)
-    retval1 = np.array([0., 1.])
-    retval2 = np.array([-1., -1.])
+    retval1 = np.array([[0.], [1.]])
+    retval2 = np.array([[-1.], [-1.]])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
-
 
 
 def test_minkowski_dist():
