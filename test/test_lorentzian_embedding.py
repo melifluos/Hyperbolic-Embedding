@@ -98,12 +98,19 @@ def tensor_exp_map(hyperboloid_points, tangent_grads):
     :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
     :return:
     """
-
+    # todo do we need to normalise the gradients?
     norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+    zero = tf.constant(0, dtype=tf.float32)
+    nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
+    nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
+    nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+    updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
+    updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
     # if norms == 0:
     #     return hyperboloid_points
-    normed_grads = tf.divide(tangent_grads, norms)
-    return tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms), normed_grads)
+    normed_grads = tf.divide(updated_grads, nonzero_norms)
+    updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms), normed_grads)
+    return tf.scatter_update(hyperboloid_points, nonzero_indices, updates)
 
 
 def test_project_onto_tangent_space():
@@ -200,9 +207,9 @@ def test_tensor_exp_map():
     check that the exp_map takes vectors in the tangent space to the manifold
     :return:
     """
-    p1 = tf.constant([[1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
-    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.]])
-    retval1 = np.array([[-1.], [-1.], [-1.]])
+    p1 = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.], [0., 0.]])
+    retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
