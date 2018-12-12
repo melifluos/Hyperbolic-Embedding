@@ -25,7 +25,7 @@ def minkowski_tensor_dot(u, v):
     assert u.shape == v.shape, 'minkowski dot product not define for different shape tensors'
     try:
         temp = np.eye(u.shape[1])
-    except IndentationError:
+    except IndexError:
         temp = np.eye(u.shape)
     temp[0, 0] = -1.
     T = tf.constant(temp, dtype=u.dtype)
@@ -113,6 +113,35 @@ def tensor_exp_map(hyperboloid_points, tangent_grads):
     return tf.scatter_update(hyperboloid_points, nonzero_indices, updates)
 
 
+def transform_grads(grad):
+    """
+    multiply by the inverse of the Minkowski metric tensor g = diag[-1, 1,1 ... 1] to make the first element of each
+    grad vector negative
+    :param grad: grad matrix of shape (n_vars, embedding_dim)
+    :return:
+    """
+    x = np.eye(grad.shape[1])
+    x[0, 0] = -1.
+    T = tf.constant(x, dtype=grad.dtype)
+    return tf.matmul(grad, T)
+
+
+def rsgd(grads, vecs, lr=1):
+    """
+    Perform the Riemannian gradient descent operation by
+    1/ Transforming gradients using the Minkowski metric tensor
+    2/ Projecting onto the tangent space
+    3/ Applying the exponential map
+    :param grads:
+    :param var:
+    :param lr:
+    :return:
+    """
+    minkowski_grads = transform_grads(grads)
+    tangent_grads = project_tensors_onto_tangent_space(vecs, minkowski_grads)
+    return tensor_exp_map(vecs, lr * tangent_grads)
+
+
 def test_project_onto_tangent_space():
     """
     Remember that we negate the first co-ordinate, so in 2D the hyperboloid appears rotated 90 degrees clockwise from how it is normally drawn
@@ -180,26 +209,6 @@ def test_exp_map():
     assert em1[1] == -em2[1]
     assert em3[0] > em1[0]
     assert em3[1] > em1[1]
-
-
-def test_moving_along_hyperboloid():
-    """
-    test multiple series of e
-    :return:
-    """
-    p1 = tf.constant([[1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
-    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.]])
-    retval1 = np.array([[-1.], [-1.], [-1.]])
-    sess = tf.Session()
-    init = tf.global_variables_initializer()
-    sess.run(init)
-    for i in range(10):
-        em = tensor_exp_map(p1, g1)
-        # check that the points are on the hyperboloid
-        norms = minkowski_tensor_dot(em, em)
-        assert np.array_equal(np.around(sess.run(norms), 3), retval1)
-        p1 = em
-        g1 = project_tensors_onto_tangent_space(p1, g1)
 
 
 def test_tensor_exp_map():
@@ -271,7 +280,6 @@ def test_gradient_transform_single_vector():
     init = tf.global_variables_initializer()
     sess.run(init)
     retval = sess.run(U)
-    print retval
     assert (np.array_equal(retval, true_val))
 
 
@@ -290,8 +298,50 @@ def test_gradient_transform_matrix():
     init = tf.global_variables_initializer()
     sess.run(init)
     retval = sess.run(U)
-    print retval
     assert (np.array_equal(retval, true_val))
+
+
+def test_transform_grads():
+    g1 = tf.constant([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
+    retval1 = np.array([[-1., 1.], [-2., -1.], [-3., 2.], [-4., 0.]])
+    transformed_grads = transform_grads(g1)
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    assert np.array_equal(sess.run(transformed_grads), retval1)
+
+
+def test_rsgd():
+    p1 = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+    g1 = tf.constant([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
+    retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    # here the tangent space is x=1
+    p2 = rsgd(g1, p1)
+    # print(sess.run(p2))
+    # check that the points are on the hyperboloid
+    norms = sess.run(minkowski_tensor_dot(p2, p2))
+    assert np.array_equal(np.around(norms, 3), retval1)
+
+
+# def test_moving_along_hyperboloid():
+#     """
+#     test multiple series of e
+#     :return:
+#     """
+#     points = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+#     grads = tf.Variable([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
+#     retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
+#     sess = tf.Session()
+#     init = tf.global_variables_initializer()
+#     sess.run(init)
+#     for i in range(10):
+#         points = rsgd(grads, points)
+#         # check that the points are on the hyperboloid
+#         norms = minkowski_tensor_dot(points, points)
+#         assert np.array_equal(np.around(sess.run(norms), 3), retval1)
 
 
 if __name__ == '__main__':
