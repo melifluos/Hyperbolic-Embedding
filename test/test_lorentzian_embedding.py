@@ -6,10 +6,6 @@ import os
 
 sys.path.append(os.path.join('..', 'src', 'python'))
 
-import utils
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from run_detectors import run_all_datasets
 import numpy as np
 import tensorflow as tf
 import math
@@ -140,6 +136,28 @@ def rsgd(grads, vecs, lr=1):
     minkowski_grads = transform_grads(grads)
     tangent_grads = project_tensors_onto_tangent_space(vecs, minkowski_grads)
     return tensor_exp_map(vecs, lr * tangent_grads)
+
+
+def to_hyperboloid_points(poincare_pts):
+    """
+    Post: result.shape[1] == poincare_pts.shape[1] + 1
+    """
+    norm_sqd = (poincare_pts ** 2).sum(axis=1)
+    N = poincare_pts.shape[1]
+    result = np.zeros((poincare_pts.shape[0], N + 1), dtype=np.float64)
+    result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
+    result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
+    return result
+
+
+def to_poincare_ball_point(hyperboloid_pt):
+    """
+    project from hyperboloid to poincare ball
+    :param hyperboloid_pt:
+    :return:
+    """
+    N = len(hyperboloid_pt) - 1
+    return hyperboloid_pt[:N] / (hyperboloid_pt[N] + 1)
 
 
 def test_project_onto_tangent_space():
@@ -324,6 +342,15 @@ def test_rsgd():
     # check that the points are on the hyperboloid
     norms = sess.run(minkowski_tensor_dot(p2, p2))
     assert np.array_equal(np.around(norms, 3), retval1)
+
+
+def test_to_hyperboloid_points(N=100):
+    poincare_pts = np.divide(np.random.rand(N, 2), np.sqrt(2))  # sample a load of points in the Poincare disk
+    hyp_points = to_hyperboloid_points(poincare_pts)
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    assert np.array_equal(np.around(sess.run(minkowski_tensor_dot(hyp_points, hyp_points)), 3), np.array(N * [[-1.]]))
 
 
 # def test_moving_along_hyperboloid():
