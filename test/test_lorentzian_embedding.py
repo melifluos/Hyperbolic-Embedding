@@ -116,7 +116,11 @@ def transform_grads(grad):
     :param grad: grad matrix of shape (n_vars, embedding_dim)
     :return:
     """
-    x = np.eye(grad.shape[1])
+    try:
+        x = np.eye(grad.shape[1])
+    except IndexError:
+        x = np.eye(grad.shape[0])
+        grad = tf.expand_dims(grad, 0)
     x[0, 0] = -1.
     T = tf.constant(x, dtype=grad.dtype)
     return tf.matmul(grad, T)
@@ -321,12 +325,16 @@ def test_gradient_transform_matrix():
 
 def test_transform_grads():
     g1 = tf.constant([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
+    g2 = tf.constant([1., 2., 3.])
     retval1 = np.array([[-1., 1.], [-2., -1.], [-3., 2.], [-4., 0.]])
-    transformed_grads = transform_grads(g1)
+    retval2 = np.array([[-1., 2., 3.]])
+    transformed_grads1 = transform_grads(g1)
+    transformed_grads2 = transform_grads(g2)
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
-    assert np.array_equal(sess.run(transformed_grads), retval1)
+    assert np.array_equal(sess.run(transformed_grads1), retval1)
+    assert np.array_equal(sess.run(transformed_grads2), retval2)
 
 
 def test_rsgd():
@@ -346,7 +354,7 @@ def test_rsgd():
 
 def test_to_hyperboloid_points(N=100):
     poincare_pts = np.divide(np.random.rand(N, 2), np.sqrt(2))  # sample a load of points in the Poincare disk
-    hyp_points = to_hyperboloid_points(poincare_pts)
+    hyp_points = tf.Variable(to_hyperboloid_points(poincare_pts))
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)

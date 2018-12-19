@@ -32,7 +32,7 @@ class Params:
                  initial_learning_rate, save_path='', epochs=1, concurrent_steps=10):
         self.filepath = filepath
         self.batch_size = batch_size
-        self.embedding_size = embedding_size
+        self.embedding_size = embedding_size  # the number of free parameters in the embeddings i.e. the hyperboloid will have embedding_size + 1 dimensions
         self.num_samples = neg_samples  # The number of negative samples for the entire batch - this should scale with batch size
         self.skip_window = skip_window
         # num_pairs NOT CURRENTLY IN USE
@@ -83,9 +83,13 @@ class cust2vec():
         :param grad: grad matrix of shape (n_vars, embedding_dim)
         :return:
         """
-        x = np.eye(grad.shape[1])
-        x[0, 0] = -1
-        T = tf.constant(x, dtype=tf.int32)
+        try:
+            x = np.eye(grad.shape[1])
+        except IndexError:
+            x = np.eye(grad.shape[0])
+            grad = tf.expand_dims(grad, 0)
+        x[0, 0] = -1.
+        T = tf.constant(x, dtype=grad.dtype)
         return tf.matmul(grad, T)
 
     def modify_grads(self, grads, emb):
@@ -117,11 +121,26 @@ class cust2vec():
         :return:
         """
         grad, name = grads
-        minkowski_grads = self.transform_grads(grad)
+        minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
-        tangent_grads = self.project_onto_tangent_space(vecs, minkowski_grads)
+        tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
         # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        return self.exp_map(vecs, lr*tangent_grads)
+        return self.tensor_exp_map(vecs, lr * tangent_grads)
+
+    def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
+        """
+        Post: result.shape[1] == poincare_pts.shape[1] + 1
+        """
+        poincare_pts = np.random.uniform(-init_width, init_width, (vocab_size, embedding_size))
+        norm_sqd = (poincare_pts ** 2).sum(axis=1)
+        N = poincare_pts.shape[1]
+        result = np.zeros((poincare_pts.shape[0], N + 1), dtype=np.float64)
+        result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
+        result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
+        return result
+
+    def initialise_on_hyperboloid(self):
+        pass
 
     def minkowski_dot(self, u, v):
         """
@@ -131,6 +150,24 @@ class cust2vec():
         :return: a scalar dot product
         """
         return tf.tensordot(u, v, 1) - 2 * tf.multiply(u[0], v[0])
+
+    def minkowski_tensor_dot(self, u, v):
+        """
+        Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
+        :param u: a tensor of shape (#examples, dims)
+        :param v: a tensor of shape (#examples, dims)
+        :return: a scalar dot product
+        """
+        # assert u.shape == v.shape, 'minkowski dot product not define for u of shape {} and v of shape'.format(u.shape,                                                                                                              v.shape)
+        try:
+            temp = np.eye(u.shape[1])
+        except IndexError:
+            temp = np.eye(u.shape)
+        temp[0, 0] = -1.
+        T = tf.constant(temp, dtype=u.dtype)
+        # make the first column of v negative
+        v_neg = tf.matmul(v, T)
+        return tf.reduce_sum(tf.multiply(u, v_neg), 1, keep_dims=True)  # keep dims for broadcasting
 
     def minkowski_dist(self, u, v):
         """
@@ -150,6 +187,16 @@ class cust2vec():
         """
         return minkowski_tangent + self.minkowski_dot(hyperboloid_point, minkowski_tangent) * hyperboloid_point
 
+    def project_tensors_onto_tangent_space(self, hyperboloid_points, ambient_gradients):
+        """
+        project gradients in the ambiant space onto the tangent space
+        :param hyperboloid_point: A point on the hyperboloid
+        :param ambient_gradient: The gradient to project
+        :return: gradients in the tangent spaces of the hyperboloid points
+        """
+        return ambient_gradients + tf.multiply(self.minkowski_tensor_dot(hyperboloid_points, ambient_gradients),
+                                               hyperboloid_points)
+
     def exp_map(self, base, tangent):
         """
         Map a vector 'tangent' from the tangent space at point 'base' onto the manifold.
@@ -160,6 +207,28 @@ class cust2vec():
             return base
         tangent /= norm
         return tf.cosh(norm) * base + tf.sinh(norm) * tangent
+
+    def tensor_exp_map(self, hyperboloid_points, tangent_grads):
+        """
+        Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+        :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+        :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+        :return:
+        """
+        # todo do we need to normalise the gradients?
+        norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+        zero = tf.constant(0, dtype=tf.float32)
+        nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
+        nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
+        nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+        updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
+        updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
+        # if norms == 0:
+        #     return hyperboloid_points
+        normed_grads = tf.divide(updated_grads, nonzero_norms)
+        updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
+                                                                                    normed_grads)
+        return tf.scatter_update(hyperboloid_points, nonzero_indices, updates)
 
     def pairwise_distance(self, examples, samples):
         """
@@ -240,16 +309,9 @@ class cust2vec():
                 0.0001, 1.0 - tf.cast(self._words, tf.float32) / words_to_train)
             self._lr = lr
             optimizer = tf.train.GradientDescentOptimizer(lr)
-            # self.emb = tf.clip_by_norm(self.emb, 1 - epsilon, axes=1)
-            # self.sm_w_t = tf.clip_by_norm(self.sm_w_t, 1 - epsilon, axes=1)
-            # clip the vectors back inside the Poincare ball
-            self.clip_tensor_norms(self.emb)
-            self.clip_tensor_norms(self.sm_w_t)
+
             grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
             sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
-
-            # emb_grad = optimizer.compute_gradients(loss, [self.emb])
-            # sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_w_t])
 
             sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0])
             emb_grad_hist = tf.summary.histogram('emb_grad', emb_grad[0])
@@ -258,26 +320,16 @@ class cust2vec():
             self.emb_grad = emb_grad
             self.sm_w_t_grad = sm_w_t_grad
 
-            # modified_emb_grad = emb_grad
-            # modified_sm_w_t_grad = sm_w_t_grad
-            # modified_sm_b_grad = self.modify_grads(sm_b_grad, self.sm_b)
-            modified_emb_grad = self.modify_grads(emb_grad, self.emb)
-            modified_sm_w_t_grad = self.modify_grads(sm_w_t_grad, self.sm_w_t)
-            # theta_out_clipped = tf.clip_by_value(modified_theta_out, -1, 1, name="theta_out_clipped")
-            self.modified_emb_grad = modified_emb_grad
-            self.modified_sm_w_t_grad = modified_sm_w_t_grad
-
-            modified_emb_grad_hist = tf.summary.histogram('modified_emb_grad', modified_emb_grad[0])
-            modified_sm_w_t_grad_hist = tf.summary.histogram('modified_sm_w_t_grad', modified_sm_w_t_grad[0])
-
-            gv = [sm_b_grad, modified_emb_grad, modified_sm_w_t_grad]
-            vars = [self.sm_b, self.emb, self.sm_w_t]
+            # gv = [sm_b_grad, emb_grad, sm_w_t_grad]
+            # vars = [self.sm_b, self.emb, self.sm_w_t]
+            gv = [emb_grad, sm_w_t_grad]
+            vars = [self.emb, self.sm_w_t]
 
             all_update_ops = []
             for var, grad in zip(vars, gv):
                 # get riemannian factor
                 # rescale grad
-                all_update_ops.append(tf.assign(var, self.rsgd(var, grad, lr)))
+                all_update_ops.append(tf.assign(var, self.rsgd(grad, var, lr)))
 
             # self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
             self._train = tf.group(*all_update_ops)
@@ -306,7 +358,7 @@ class cust2vec():
             self._word2id[w] = i
         true_logits, sampled_logits = self.forward(self.examples, self.labels)
         loss = self.nce_loss(true_logits, sampled_logits)
-        tf.summary.scalar("NCE loss", loss)
+        tf.summary.scalar("NCE_loss", loss)
         self._loss = loss
         self.optimize(loss)
         # add operator to clip embeddings inside the poincare ball
@@ -428,23 +480,19 @@ class cust2vec():
         with tf.name_scope('model'):
             init_width = 0.5 / opts.embedding_size
 
-            self.emb = tf.Variable(
-                tf.random_uniform(
-                    [opts.vocab_size, opts.embedding_size], -init_width, init_width),
-                name="emb")
+            self.emb = tf.Variable(self.to_hyperboloid_points(opts.vocab_size, opts.embedding_size, init_width),
+                                   name="emb", dtype=tf.float32)
 
             emb_hist = tf.summary.histogram('embedding', self.emb)
 
-            self.sm_w_t = tf.Variable(
-                tf.random_uniform(
-                    [opts.vocab_size, opts.embedding_size], -init_width, init_width),
-                name="sm_w_t")
+            self.sm_w_t = tf.Variable(self.to_hyperboloid_points(opts.vocab_size, opts.embedding_size, init_width),
+                                      name="sm_w_t", dtype=tf.float32)
 
-            smw_hist = tf.summary.histogram('softmax weight', self.sm_w_t)
+            smw_hist = tf.summary.histogram('softmax_weight', self.sm_w_t)
 
             # Softmax bias: [emb_dim].
             self.sm_b = tf.Variable(tf.zeros([opts.vocab_size]), name="sm_b")
-            smb_hist = tf.summary.histogram('softmax bias', self.sm_b)
+            smb_hist = tf.summary.histogram('softmax_bias', self.sm_b)
 
             # Create a variable to keep track of the number of batches that have been fed to the graph
             self.global_step = tf.Variable(0, name="global_step")
@@ -575,10 +623,10 @@ def generate_karate_embedding():
     path = '../../local_resources/karate/embeddings/hyperbolic_cartesian_Win' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out = main(params)
-    visualisation.plot_poincare_embedding(embedding_in, y,
-                                          '../../results/karate/figs/poincare_Win' + '_' + utils.get_timestamp() + '.pdf')
-    visualisation.plot_poincare_embedding(embedding_out, y,
-                                          '../../results/karate/figs/poincare_Wout' + '_' + utils.get_timestamp() + '.pdf')
+    # visualisation.plot_poincare_embedding(embedding_in, y,
+    #                                       '../../results/karate/figs/poincare_Win' + '_' + utils.get_timestamp() + '.pdf')
+    # visualisation.plot_poincare_embedding(embedding_out, y,
+    #                                       '../../results/karate/figs/poincare_Wout' + '_' + utils.get_timestamp() + '.pdf')
     df_in = pd.DataFrame(data=embedding_in, index=range(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
