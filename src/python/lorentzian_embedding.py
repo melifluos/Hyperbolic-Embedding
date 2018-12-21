@@ -121,11 +121,15 @@ class cust2vec():
         :return:
         """
         grad, name = grads
+        print(grad.values.shape)
         minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
         # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        return self.tensor_exp_map(vecs, lr * tangent_grads)
+        print(tangent_grads.shape)
+        print(vecs.shape)
+        # return self.tensor_exp_map(vecs, tf.scalar_mul(lr, tangent_grads))
+        return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
 
     def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
         """
@@ -133,8 +137,8 @@ class cust2vec():
         """
         poincare_pts = np.random.uniform(-init_width, init_width, (vocab_size, embedding_size))
         norm_sqd = (poincare_pts ** 2).sum(axis=1)
-        N = poincare_pts.shape[1]
-        result = np.zeros((poincare_pts.shape[0], N + 1), dtype=np.float64)
+        # the hyperboloid has one extra ambient dimension
+        result = np.zeros((poincare_pts.shape[0], embedding_size + 1), dtype=np.float64)
         result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
         result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
         return result
@@ -159,10 +163,12 @@ class cust2vec():
         :return: a scalar dot product
         """
         # assert u.shape == v.shape, 'minkowski dot product not define for u of shape {} and v of shape'.format(u.shape,                                                                                                              v.shape)
-        try:
-            temp = np.eye(u.shape[1])
-        except IndexError:
-            temp = np.eye(u.shape)
+        hyperboloid_dims = self._options.embedding_size + 1
+        # try:
+        #     temp = np.eye(u.shape[1])
+        # except IndexError:
+        #     temp = np.eye(u.shape)
+        temp = np.eye(hyperboloid_dims)
         temp[0, 0] = -1.
         T = tf.constant(temp, dtype=u.dtype)
         # make the first column of v negative
@@ -220,7 +226,15 @@ class cust2vec():
         zero = tf.constant(0, dtype=tf.float32)
         nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
         nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
-        nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+        print("hyperboloid points:", hyperboloid_points.shape)
+        print("tangent grads: ", tangent_grads.shape)
+        print("norms: ", norms.shape)
+        print("nonzero flags: ", nonzero_flags.shape)
+        print("nonzero indices:", nonzero_indices.shape)
+        try:
+            nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+        except ValueError:
+            print(norms, nonzero_flags)
         updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
         updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
         # if norms == 0:

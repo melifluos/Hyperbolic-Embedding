@@ -11,6 +11,22 @@ import tensorflow as tf
 import math
 
 
+def test_class():
+
+    def __init__(self):
+        pass
+
+    def forward(self):
+        pass
+
+    def optimise(self):
+        pass
+
+    def loss():
+        pass
+
+
+
 def minkowski_tensor_dot(u, v):
     """
     Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
