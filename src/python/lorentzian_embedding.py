@@ -126,10 +126,11 @@ class cust2vec():
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
         # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        print(tangent_grads.shape)
-        print(vecs.shape)
+        print('tangent grads shape:', tangent_grads.shape)
+        print('vecs shape:', vecs.shape)
         # return self.tensor_exp_map(vecs, tf.scalar_mul(lr, tangent_grads))
-        return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
+        # return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
+        return self.tensor_exp_map(vecs, lr * tangent_grads)
 
     def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
         """
@@ -222,19 +223,25 @@ class cust2vec():
         :return:
         """
         # todo do we need to normalise the gradients?
+        embedding_size = self._options.embedding_size
+        batch_size = self._options.batch_size
+        # set shape is required as boolean mask can not use tensors of unknown shape
+        tangent_grads.set_shape([batch_size, embedding_size + 1])
         norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+        norms.set_shape([batch_size, 1])
         zero = tf.constant(0, dtype=tf.float32)
+        # zero = tf.zeros(shape=norms.shape)
+        # nonzero_flags = tf.Variable(tf.squeeze(tf.not_equal(norms, zero)), expected_shape=[4])
         nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
+        nonzero_flags.set_shape([None])
         nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
         print("hyperboloid points:", hyperboloid_points.shape)
         print("tangent grads: ", tangent_grads.shape)
         print("norms: ", norms.shape)
         print("nonzero flags: ", nonzero_flags.shape)
         print("nonzero indices:", nonzero_indices.shape)
-        try:
-            nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
-        except ValueError:
-            print(norms, nonzero_flags)
+        nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+        print(norms, nonzero_flags)
         updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
         updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
         # if norms == 0:
@@ -325,6 +332,8 @@ class cust2vec():
             optimizer = tf.train.GradientDescentOptimizer(lr)
 
             grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            for (grad, name) in grads:
+                print('raw grad shape:', grad.values.shape)
             sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
             sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0])
@@ -546,13 +555,20 @@ class cust2vec():
 
             # Weights for sampled ids: [num_sampled, emb_dim]
             sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+
             # sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
             # Biases for sampled ids: [num_sampled, 1]
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
+            print('sampled_w shape: ', sampled_w.shape)
+            print('sampled_b shape: ', sampled_b.shape)
+            print('example emb shape: ', example_emb.shape)
+            print('true w shape: ', true_w.shape)
+
             # True logits: [batch_size, 1]
             # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
             true_logits = self.elementwise_distance(example_emb, true_w) + true_b
+            print('true logits shape: ', true_logits.shape)
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
@@ -562,6 +578,7 @@ class cust2vec():
             #                            sampled_w,
             #                            transpose_b=True) + sampled_b_vec
             sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
+            print('sampled logits shape: ', sampled_logits.shape)
         return true_logits, sampled_logits
 
 
