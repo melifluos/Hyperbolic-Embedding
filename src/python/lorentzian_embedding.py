@@ -115,19 +115,19 @@ class cust2vec():
         1/ Transforming gradients using the Minkowski metric tensor
         2/ Projecting onto the tangent space
         3/ Applying the exponential map
-        :param grads:
+        :param grads: (grad, name) tuple where grad is a struct with attributes values and indices
         :param var:
         :param lr:
         :return:
         """
         grad, name = grads
-        print(grad.values.shape)
+        # print(grad.values.shape)
         minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
         # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        print('tangent grads shape:', tangent_grads.shape)
-        print('vecs shape:', vecs.shape)
+        # print('tangent grads shape:', tangent_grads.shape)
+        # print('vecs shape:', vecs.shape)
         # return self.tensor_exp_map(vecs, tf.scalar_mul(lr, tangent_grads))
         # return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
         return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)

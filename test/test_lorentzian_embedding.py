@@ -161,7 +161,7 @@ def transform_grads(grad):
     return tf.matmul(grad, T)
 
 
-def rsgd(grads, vecs, lr=1):
+def rsgd(grads, var, lr=1):
     """
     Perform the Riemannian gradient descent operation by
     1/ Transforming gradients using the Minkowski metric tensor
@@ -172,9 +172,11 @@ def rsgd(grads, vecs, lr=1):
     :param lr:
     :return:
     """
-    minkowski_grads = transform_grads(grads)
+    grad, name = grads
+    minkowski_grads = transform_grads(grad.values)
+    vecs = tf.nn.embedding_lookup(var, grad.indices)
     tangent_grads = project_tensors_onto_tangent_space(vecs, minkowski_grads)
-    return tensor_exp_map(vecs, lr * tangent_grads)
+    return tensor_exp_map(var, grad.indices, lr * tangent_grads)
 
 
 def to_hyperboloid_points(poincare_pts):
@@ -268,37 +270,6 @@ def test_exp_map():
     assert em3[1] > em1[1]
 
 
-def test_tensor_exp_map():
-    """
-    check that the exp_map takes vectors in the tangent space to the manifold
-    :return:
-    """
-    input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]])
-    p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
-    indices = tf.constant([0, 1, 3, 4])
-    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.], [0., 0.]])
-    retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
-    sess = tf.Session()
-    init = tf.global_variables_initializer()
-    sess.run(init)
-    # here the tangent space is x=1
-    new_vars = tensor_exp_map(p1, indices, g1)
-    em1 = tf.nn.embedding_lookup(new_vars, indices)
-    # check that the points are on the hyperboloid
-    norms = sess.run(minkowski_tensor_dot(em1, em1))
-    print(norms)
-    assert np.array_equal(np.around(norms, 3), retval1)
-    em1 = sess.run(em1)
-    new_vars = sess.run(new_vars)
-    np_new_vars = np.array(new_vars)
-    assert np.array_equal(np_new_vars[2, :], input_points[2, :])
-    assert np.array_equal(np_new_vars[4, :], input_points[4, :])
-    assert em1[0, 0] == em1[1, 0]
-    assert em1[0, 1] == -em1[1, 1]
-    assert em1[2, 0] > em1[0, 0]
-    assert em1[2, 1] > em1[0, 1]
-
-
 def test_minkowski_vector_dot():
     u1 = tf.constant([1., 0])
     v1 = tf.constant([1., 0])
@@ -380,19 +351,62 @@ def test_transform_grads():
     assert np.array_equal(sess.run(transformed_grads2), retval2)
 
 
-def test_rsgd():
-    p1 = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
-    g1 = tf.constant([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
+def test_tensor_exp_map():
+    """
+    check that the exp_map takes vectors in the tangent space to the manifold
+    :return:
+    """
+    input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]])
+    p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
+    indices = tf.constant([0, 1, 3, 4])
+    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.], [0., 0.]])
     retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     # here the tangent space is x=1
-    p2 = rsgd(g1, p1)
-    # print(sess.run(p2))
+    new_vars = tensor_exp_map(p1, indices, g1)
+    em1 = tf.nn.embedding_lookup(new_vars, indices)
     # check that the points are on the hyperboloid
-    norms = sess.run(minkowski_tensor_dot(p2, p2))
+    norms = sess.run(minkowski_tensor_dot(em1, em1))
+    print(norms)
     assert np.array_equal(np.around(norms, 3), retval1)
+    em1 = sess.run(em1)
+    new_vars = sess.run(new_vars)
+    np_new_vars = np.array(new_vars)
+    assert np.array_equal(np_new_vars[2, :], input_points[2, :])
+    assert np.array_equal(np_new_vars[4, :], input_points[4, :])
+    assert em1[0, 0] == em1[1, 0]
+    assert em1[0, 1] == -em1[1, 1]
+    assert em1[2, 0] > em1[0, 0]
+    assert em1[2, 1] > em1[0, 1]
+
+
+def test_rsgd():
+    from collections import namedtuple
+    grad = namedtuple('grad', 'values indices')
+    input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]])
+    p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
+    indices = tf.constant([0, 1, 3, 4])
+    g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.], [0., 0.]])
+    grad.values = g1
+    grad.indices = indices
+    grads = (grad, 'test_grads')
+    retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    # here the tangent space is x=1
+    p2 = rsgd(grads, p1, lr=1.)
+    updated_points = tf.nn.embedding_lookup(p2, indices)
+    # check that the points are on the hyperboloid
+    norms = sess.run(minkowski_tensor_dot(updated_points, updated_points))
+    assert np.array_equal(np.around(norms, 3), retval1)
+    new_vars = sess.run(p2)
+    np_new_vars = np.array(new_vars)
+    print(np_new_vars)
+    assert np.array_equal(np_new_vars[2, :], input_points[2, :])
+    assert np.array_equal(np_new_vars[4, :], input_points[4, :])
 
 
 def test_to_hyperboloid_points(N=100):
