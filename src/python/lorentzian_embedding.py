@@ -121,16 +121,11 @@ class cust2vec():
         :return:
         """
         grad, name = grads
-        # print(grad.values.shape)
         minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
-        # CHECK THIS - YOU DID IT AFTER HOLIDAY
-        # print('tangent grads shape:', tangent_grads.shape)
-        # print('vecs shape:', vecs.shape)
-        # return self.tensor_exp_map(vecs, tf.scalar_mul(lr, tangent_grads))
-        # return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
         return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
+        # self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
 
     def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
         """
@@ -178,12 +173,12 @@ class cust2vec():
 
     def minkowski_dist(self, u, v):
         """
-        The distance between two points in Minkowski space
-        :param u:
-        :param v:
-        :return:
+        The distance between points in Minkowski space
+        :param u: tensor of points of shape (examples, dims)
+        :param v: tensor of points of shape (examples, dims)
+        :return: a tensor of distances of shape (examples)
         """
-        return tf.acosh(-self.minkowski_dot(u, v))
+        return tf.acosh(-self.minkowski_tensor_dot(u, v))
 
     def project_onto_tangent_space(self, hyperboloid_point, minkowski_tangent):
         """
@@ -231,26 +226,17 @@ class cust2vec():
         norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
         norms.set_shape([batch_size, 1])
         zero = tf.constant(0, dtype=tf.float32)
-        # zero = tf.zeros(shape=norms.shape)
-        # nonzero_flags = tf.Variable(tf.squeeze(tf.not_equal(norms, zero)), expected_shape=[4])
         nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
-        nonzero_flags.set_shape([None])
+        nonzero_flags.set_shape([batch_size])
         nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
-        # print("hyperboloid points:", hyperboloid_points.shape)
-        # print("tangent grads: ", tangent_grads.shape)
-        # print("norms: ", norms.shape)
-        # print("nonzero flags: ", nonzero_flags.shape)
-        # print("nonzero indices:", nonzero_indices.shape)
         nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
-        # print(norms, nonzero_flags)
-        updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
+        updated_grads = tf.boolean_mask(tangent_grads, nonzero_flags)
         updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
-        # if norms == 0:
-        #     return hyperboloid_points
         normed_grads = tf.divide(updated_grads, nonzero_norms)
         updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
                                                                                     normed_grads)
         return tf.scatter_update(vars, nonzero_indices, updates)
+        # tf.scatter_update(vars, nonzero_indices, updates)
 
     def pairwise_distance(self, examples, samples):
         """
@@ -333,8 +319,6 @@ class cust2vec():
             optimizer = tf.train.GradientDescentOptimizer(lr)
 
             grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
-            for (grad, name) in grads:
-                print('raw grad shape:', grad.values.shape)
             sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
             sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0])
@@ -354,8 +338,8 @@ class cust2vec():
                 # get riemannian factor
                 # rescale grad
                 all_update_ops.append(tf.assign(var, self.rsgd(grad, var, lr)))
+                # all_update_ops.append(self.rsgd(grad, var, lr))
 
-            # self._train = optimizer.apply_gradients(gv, global_step=self.global_step)
             self._train = tf.group(*all_update_ops)
 
     def build_graph(self):
@@ -561,14 +545,10 @@ class cust2vec():
             # Biases for sampled ids: [num_sampled, 1]
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
-            print('sampled_w shape: ', sampled_w.shape)
-            print('sampled_b shape: ', sampled_b.shape)
-            print('example emb shape: ', example_emb.shape)
-            print('true w shape: ', true_w.shape)
 
             # True logits: [batch_size, 1]
             # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
-            true_logits = self.elementwise_distance(example_emb, true_w) + true_b
+            true_logits = self.minkowski_dist(example_emb, true_w) + true_b
             print('true logits shape: ', true_logits.shape)
 
             # Sampled logits: [batch_size, num_sampled]
@@ -650,7 +630,7 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=1)
+                    initial_learning_rate=0.2, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/hyperbolic_cartesian_Win' + '_' + utils.get_timestamp() + '.csv'
 

@@ -52,7 +52,7 @@ def minkowski_tensor_dot(u, v):
     :param v: a tensor of shape (#examples, dims)
     :return: a scalar dot product
     """
-    assert u.shape == v.shape, 'minkowski dot product not define for different shape tensors'
+    assert u.shape == v.shape, 'minkowski dot product not defined for different shape tensors'
     try:
         temp = np.eye(u.shape[1])
     except IndexError:
@@ -81,12 +81,12 @@ def minkowski_vector_dot(u, v):
 
 def minkowski_dist(u, v):
     """
-    The distance between two points in Minkowski space
-    :param u:
-    :param v:
-    :return:
+    The distance between points in Minkowski space
+    :param u: tensor of points of shape (examples, dims)
+    :param v: tensor of points of shape (examples, dims)
+    :return: a tensor of distances of shape (examples)
     """
-    return tf.acosh(-minkowski_vector_dot(u, v))
+    return tf.acosh(-minkowski_tensor_dot(u, v))
 
 
 def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
@@ -295,14 +295,16 @@ def test_minkowski_tensor_dot():
 
 
 def test_minkowski_dist():
-    u = tf.constant([1., 0])
-    v = tf.constant([1., 0])
-    x = tf.constant([10., 0])
+    u = tf.constant([[1., 0], [1., 0.]])
+    v = tf.constant([[1., 0], [10., 0.]])
+    # x = tf.constant([10., 0])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
-    assert sess.run(minkowski_dist(u, v)) == 0
-    assert sess.run(minkowski_dist(v, x)) != 0
+    dist = sess.run(minkowski_dist(u, v))
+    print(dist)
+    assert dist[0] == 0
+    assert dist[1] != 0
 
 
 def test_gradient_transform_single_vector():
