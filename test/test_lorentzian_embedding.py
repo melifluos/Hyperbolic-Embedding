@@ -11,20 +11,38 @@ import tensorflow as tf
 import math
 
 
-def test_class():
+class TestClass:
+    def __init__(self, batch_size, embedding_size, vocab_size):
+        self.batch_size = batch_size
+        self.embedding_size = embedding_size
+        self.vocab_size = vocab_size
 
-    def __init__(self):
-        pass
+    def forward(self, examples, labels, init_width=1):
+        self.emb = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+                               name="emb", dtype=tf.float32)
 
-    def forward(self):
-        pass
+        self.sm_w_t = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+                                  name="sm_w_t", dtype=tf.float32)
+
+        example_emb = tf.nn.embedding_lookup(self.emb, examples)
+
+        true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+
+        return example_emb, true_w
+
+    def build_graph(self):
+        true_logits, sampled_logits = self.forward(examples, labels)
+        loss = self.loss(true_logits, sampled_logits)
+        self._loss = loss
+        self.optimize(loss)
+        # Properly initialize all variables.
+        tf.global_variables_initializer().run()
 
     def optimise(self):
         pass
 
     def loss():
         pass
-
 
 
 def minkowski_tensor_dot(u, v):
@@ -103,7 +121,7 @@ def exp_map(base, tangent):
     return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
 
-def tensor_exp_map(hyperboloid_points, tangent_grads):
+def tensor_exp_map(vars, indices, tangent_grads):
     """
     Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
     :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
@@ -111,10 +129,11 @@ def tensor_exp_map(hyperboloid_points, tangent_grads):
     :return:
     """
     # todo do we need to normalise the gradients?
+    hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
     norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
     zero = tf.constant(0, dtype=tf.float32)
     nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
-    nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
+    nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
     nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
     updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
     updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
@@ -122,7 +141,7 @@ def tensor_exp_map(hyperboloid_points, tangent_grads):
     #     return hyperboloid_points
     normed_grads = tf.divide(updated_grads, nonzero_norms)
     updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms), normed_grads)
-    return tf.scatter_update(hyperboloid_points, nonzero_indices, updates)
+    return tf.scatter_update(vars, nonzero_indices, updates)
 
 
 def transform_grads(grad):
@@ -254,18 +273,26 @@ def test_tensor_exp_map():
     check that the exp_map takes vectors in the tangent space to the manifold
     :return:
     """
-    p1 = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
+    input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]])
+    p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
+    indices = tf.constant([0, 1, 3, 4])
     g1 = tf.constant([[0., 1.], [0., -1.], [0., 2.], [0., 0.]])
     retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     # here the tangent space is x=1
-    em1 = tensor_exp_map(p1, g1)
+    new_vars = tensor_exp_map(p1, indices, g1)
+    em1 = tf.nn.embedding_lookup(new_vars, indices)
     # check that the points are on the hyperboloid
     norms = sess.run(minkowski_tensor_dot(em1, em1))
+    print(norms)
     assert np.array_equal(np.around(norms, 3), retval1)
-    em1 = sess.run(tensor_exp_map(p1, g1))
+    em1 = sess.run(em1)
+    new_vars = sess.run(new_vars)
+    np_new_vars = np.array(new_vars)
+    assert np.array_equal(np_new_vars[2, :], input_points[2, :])
+    assert np.array_equal(np_new_vars[4, :], input_points[4, :])
     assert em1[0, 0] == em1[1, 0]
     assert em1[0, 1] == -em1[1, 1]
     assert em1[2, 0] > em1[0, 0]

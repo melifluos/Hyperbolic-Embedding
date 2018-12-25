@@ -130,7 +130,7 @@ class cust2vec():
         print('vecs shape:', vecs.shape)
         # return self.tensor_exp_map(vecs, tf.scalar_mul(lr, tangent_grads))
         # return self.tensor_exp_map(vecs, tf.multiply(lr, tangent_grads))
-        return self.tensor_exp_map(vecs, lr * tangent_grads)
+        return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
 
     def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
         """
@@ -215,7 +215,7 @@ class cust2vec():
         tangent /= norm
         return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
-    def tensor_exp_map(self, hyperboloid_points, tangent_grads):
+    def tensor_exp_map(self, vars, indices, tangent_grads):
         """
         Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
         :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
@@ -223,6 +223,7 @@ class cust2vec():
         :return:
         """
         # todo do we need to normalise the gradients?
+        hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
         embedding_size = self._options.embedding_size
         batch_size = self._options.batch_size
         # set shape is required as boolean mask can not use tensors of unknown shape
@@ -234,14 +235,14 @@ class cust2vec():
         # nonzero_flags = tf.Variable(tf.squeeze(tf.not_equal(norms, zero)), expected_shape=[4])
         nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
         nonzero_flags.set_shape([None])
-        nonzero_indices = tf.squeeze(tf.where(nonzero_flags))
-        print("hyperboloid points:", hyperboloid_points.shape)
-        print("tangent grads: ", tangent_grads.shape)
-        print("norms: ", norms.shape)
-        print("nonzero flags: ", nonzero_flags.shape)
-        print("nonzero indices:", nonzero_indices.shape)
+        nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
+        # print("hyperboloid points:", hyperboloid_points.shape)
+        # print("tangent grads: ", tangent_grads.shape)
+        # print("norms: ", norms.shape)
+        # print("nonzero flags: ", nonzero_flags.shape)
+        # print("nonzero indices:", nonzero_indices.shape)
         nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
-        print(norms, nonzero_flags)
+        # print(norms, nonzero_flags)
         updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
         updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
         # if norms == 0:
@@ -249,7 +250,7 @@ class cust2vec():
         normed_grads = tf.divide(updated_grads, nonzero_norms)
         updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
                                                                                     normed_grads)
-        return tf.scatter_update(hyperboloid_points, nonzero_indices, updates)
+        return tf.scatter_update(vars, nonzero_indices, updates)
 
     def pairwise_distance(self, examples, samples):
         """
