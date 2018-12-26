@@ -64,6 +64,24 @@ def minkowski_tensor_dot(u, v):
     return tf.reduce_sum(tf.multiply(u, v_neg), 1, keep_dims=True)  # keep dims for broadcasting
 
 
+def pairwise_minkowski_dot(u, v):
+    """
+    creates a matrix of minkowski dot products M(i,j) = u[i,:]*v[j,:]
+    :param examples: first set of vectors of shape (ndata1, ndim)
+    :param samples: second set of vectors of shape (ndata2, ndim)
+    :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+    """
+    try:
+        temp = np.eye(u.shape[1])
+    except IndexError:
+        temp = np.eye(u.shape)
+    temp[0, 0] = -1.
+    T = tf.constant(temp, dtype=u.dtype)
+    # make the first column of v negative
+    v_neg = tf.matmul(v, T)
+    return tf.matmul(u, v_neg, transpose_b=True)
+
+
 def minkowski_vector_dot(u, v):
     """
         Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
@@ -87,6 +105,16 @@ def minkowski_dist(u, v):
     :return: a tensor of distances of shape (examples)
     """
     return tf.acosh(-minkowski_tensor_dot(u, v))
+
+
+def pairwise_minkowski_dist(u, v):
+    """
+    creates a matrix of minkowski dot products D(i,j) = d(u[i,:],v[j,:])
+    :param examples: first set of vectors of shape (ndata1, ndim)
+    :param samples: second set of vectors of shape (ndata2, ndim)
+    :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+    """
+    return tf.acosh(-pairwise_minkowski_dot(u, v))
 
 
 def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
@@ -292,6 +320,19 @@ def test_minkowski_tensor_dot():
     sess.run(init)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
+
+
+def test_pairwise_minkowski_dot():
+    x = np.array([[1, 0], [0, 1]])
+    y = np.array([[3, 4], [5, 6]])
+    u = tf.Variable(x, dtype=tf.float32)
+    v = tf.Variable(y, dtype=tf.float32)
+    retval = np.array([[-3., -5.], [4., 6.]])
+    z = pairwise_minkowski_dot(u, v)
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    assert np.array_equal(sess.run(z), retval)
 
 
 def test_minkowski_dist():

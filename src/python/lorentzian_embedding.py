@@ -171,6 +171,23 @@ class cust2vec():
         v_neg = tf.matmul(v, T)
         return tf.reduce_sum(tf.multiply(u, v_neg), 1, keep_dims=True)  # keep dims for broadcasting
 
+    def pairwise_minkowski_dot(self, u, v):
+        """
+        creates a matrix of minkowski dot products M(i,j) = u[i,:]*v[j,:]
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param samples: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+        """
+        try:
+            temp = np.eye(u.shape[1])
+        except IndexError:
+            temp = np.eye(u.shape)
+        temp[0, 0] = -1.
+        T = tf.constant(temp, dtype=u.dtype)
+        # make the first column of v negative
+        v_neg = tf.matmul(v, T)
+        return tf.matmul(u, v_neg, transpose_b=True)
+
     def minkowski_dist(self, u, v):
         """
         The distance between points in Minkowski space
@@ -245,13 +262,7 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
-        ynorm_sq = tf.reduce_sum(tf.square(samples), axis=1)
-        # use the expanded version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
-        euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
-        denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
-        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
-        return hyp_dist
+        return tf.acosh(-self.minkowski_tensor_dot(examples, samples))
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -544,7 +555,6 @@ class cust2vec():
             # sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
             # Biases for sampled ids: [num_sampled, 1]
             sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
-
 
             # True logits: [batch_size, 1]
             # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
