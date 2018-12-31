@@ -131,6 +131,8 @@ class cust2vec():
         """
         Post: result.shape[1] == poincare_pts.shape[1] + 1
         """
+        assert np.sqrt(
+            embedding_size) * init_width < 1., 'choice of init_width and embedding size allow points to be initialised outside of the poincare ball'
         poincare_pts = np.random.uniform(-init_width, init_width, (vocab_size, embedding_size))
         norm_sqd = (poincare_pts ** 2).sum(axis=1)
         # the hyperboloid has one extra ambient dimension
@@ -138,6 +140,15 @@ class cust2vec():
         result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
         result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
         return result
+
+    def to_poincare_ball_points(self, hyperboloid_pts):
+        """
+        project from hyperboloid to poincare ball
+        :param hyperboloid_pts:
+        :return:
+        """
+        N = hyperboloid_pts.shape[1]
+        return np.divide(hyperboloid_pts[:, 1:N], hyperboloid_pts[:, 0][:, None] + 1)
 
     def initialise_on_hyperboloid(self):
         pass
@@ -338,17 +349,19 @@ class cust2vec():
 
             self.emb_grad = emb_grad
             self.sm_w_t_grad = sm_w_t_grad
+            self.sm_b_grad = sm_b_grad
 
             # gv = [sm_b_grad, emb_grad, sm_w_t_grad]
             # vars = [self.sm_b, self.emb, self.sm_w_t]
             gv = [emb_grad, sm_w_t_grad]
             vars = [self.emb, self.sm_w_t]
 
-            all_update_ops = []
+            all_update_ops = [optimizer.apply_gradients([self.sm_b_grad], global_step=self.global_step)]
             for var, grad in zip(vars, gv):
                 # get riemannian factor
                 # rescale grad
-                all_update_ops.append(tf.assign(var, self.rsgd(grad, var, lr)))
+                # all_update_ops.append(tf.assign(var, self.rsgd(grad, var, lr)))
+                all_update_ops.append(self.rsgd(grad, var, lr))
                 # all_update_ops.append(self.rsgd(grad, var, lr))
 
             self._train = tf.group(*all_update_ops)
@@ -640,7 +653,7 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=1, concurrent_steps=1)
+                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/hyperbolic_cartesian_Win' + '_' + utils.get_timestamp() + '.csv'
 
