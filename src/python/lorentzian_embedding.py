@@ -252,11 +252,17 @@ class cust2vec():
         # set shape is required as boolean mask can not use tensors of unknown shape
         tangent_grads.set_shape([batch_size, embedding_size + 1])
         norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
-        norms.set_shape([batch_size, 1])
+        # norms.set_shape([batch_size, 1])
+        norms.set_shape([None, 1])
         zero = tf.constant(0, dtype=tf.float32)
         nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
-        nonzero_flags.set_shape([batch_size])
+        # nonzero_flags = tf.not_equal(norms, zero)
+        # nonzero_flags.set_shape([batch_size, 1])
+        nonzero_flags.set_shape([None])
         nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
+        print('norms shape: ', norms.shape)
+        print('nonzero_flags shape: ', nonzero_flags.shape)
+        print('tangent grads shape: ', tangent_grads.shape)
         nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
         updated_grads = tf.boolean_mask(tangent_grads, nonzero_flags)
         updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
@@ -598,7 +604,9 @@ def main(params):
             print('running epoch {}'.format(training_epoch + 1))
             model.train()  # Process one epoch
         # Perform a final save.
-        emb_in, emb_out = model._session.run([model.emb, model.sm_w_t])
+        hyperboloid_emb_in, hyperboloid_emb_out = model._session.run([model.emb, model.sm_w_t])
+        emb_in = model.to_poincare_ball_points(hyperboloid_emb_in)
+        emb_out = model.to_poincare_ball_points(hyperboloid_emb_out)
 
     def sort_by_idx(embedding, reverse_index):
         """
@@ -653,20 +661,20 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=5, concurrent_steps=1)
+                    initial_learning_rate=0.2, save_path=log_path, epochs=1, concurrent_steps=1)
 
-    path = '../../local_resources/karate/embeddings/hyperbolic_cartesian_Win' + '_' + utils.get_timestamp() + '.csv'
+    path = '../../local_resources/karate/embeddings/lorentzian_Win' + '_' + utils.get_timestamp() + '.csv'
 
     embedding_in, embedding_out = main(params)
-    # visualisation.plot_poincare_embedding(embedding_in, y,
-    #                                       '../../results/karate/figs/poincare_Win' + '_' + utils.get_timestamp() + '.pdf')
-    # visualisation.plot_poincare_embedding(embedding_out, y,
-    #                                       '../../results/karate/figs/poincare_Wout' + '_' + utils.get_timestamp() + '.pdf')
+    visualisation.plot_poincare_embedding(embedding_in, y,
+                                          '../../results/karate/figs/lorentzian_Win' + '_' + utils.get_timestamp() + '.pdf')
+    visualisation.plot_poincare_embedding(embedding_out, y,
+                                          '../../results/karate/figs/lorentzian_Wout' + '_' + utils.get_timestamp() + '.pdf')
     df_in = pd.DataFrame(data=embedding_in, index=range(embedding_in.shape[0]))
     df_in.to_csv(path, sep=',')
     df_out = pd.DataFrame(data=embedding_out, index=range(embedding_out.shape[0]))
     df_out.to_csv(
-        '../../local_resources/karate/embeddings/hyperbolic_cartesian_Wout' + '_' + utils.get_timestamp() + '.csv',
+        '../../local_resources/karate/embeddings/lorentzian_Wout' + '_' + utils.get_timestamp() + '.csv',
         sep=',')
     return path
 
