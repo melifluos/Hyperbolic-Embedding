@@ -272,7 +272,7 @@ def exp_map(base, tangent):
     return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
 
-def tensor_exp_map(vars, indices, tangent_grads):
+def tensor_exp_map1(vars, indices, tangent_grads):
     """
     Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
     :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
@@ -288,11 +288,44 @@ def tensor_exp_map(vars, indices, tangent_grads):
     nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
     updated_grads = tf.boolean_mask(tangent_grads, tf.squeeze(nonzero_flags))
     updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
-    # if norms == 0:
-    #     return hyperboloid_points
     normed_grads = tf.divide(updated_grads, nonzero_norms)
     updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms), normed_grads)
     return tf.scatter_update(vars, nonzero_indices, updates)
+
+
+def tensor_exp_map2(vars, indices, tangent_grads):
+    """
+    Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+    :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+    :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+    :return:
+    """
+    # todo do we need to normalise the gradients?
+    hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
+    norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+    normed_grads = tf.divide(tangent_grads, norms)  # norms can be zero, so may contain nan and inf values
+    values_to_replace = tf.logical_or(tf.is_nan(normed_grads), tf.is_inf(normed_grads))
+    # we can replace with any finite value because sinh(0) = 0, so they cancel out
+    safe_grads = tf.where(values_to_replace, tf.ones_like(normed_grads), normed_grads)
+    updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms), safe_grads)
+    return tf.scatter_update(vars, indices, updates)
+
+
+def tensor_exp_map(vars, indices, tangent_grads):
+    """
+    Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+    :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+    :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+    :return:
+    """
+    # todo do we need to normalise the gradients?
+    hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
+    norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+    normed_grads = tf.divide(tangent_grads, norms)  # norms can be zero, so may contain nan and inf values
+    updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms), normed_grads)  # norms can also be large sending sinh / cosh -> inf
+    values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
+    safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
+    return tf.scatter_update(vars, indices, safe_updates)
 
 
 def transform_grads(grad):
@@ -312,7 +345,7 @@ def transform_grads(grad):
     return tf.matmul(grad, T)
 
 
-def rsgd(grads, var, lr=1):
+def rsgd(grads, var, lr=1, max_norm=1):
     """
     Perform the Riemannian gradient descent operation by
     1/ Transforming gradients using the Minkowski metric tensor
@@ -324,7 +357,9 @@ def rsgd(grads, var, lr=1):
     :return:
     """
     grad, name = grads
-    minkowski_grads = transform_grads(grad.values)
+    clipped_grads = tf.clip_by_norm(grad.values, max_norm, axes=1)
+    minkowski_grads = transform_grads(clipped_grads)
+    # minkowski_grads = transform_grads(grad.values)
     vecs = tf.nn.embedding_lookup(var, grad.indices)
     tangent_grads = project_tensors_onto_tangent_space(vecs, minkowski_grads)
     return tensor_exp_map(var, grad.indices, lr * tangent_grads)
@@ -335,7 +370,7 @@ def to_hyperboloid_points(poincare_pts):
     Post: result.shape[1] == poincare_pts.shape[1] + 1
     """
     norm_sqd = (poincare_pts ** 2).sum(axis=1)
-    print('norm squared: ', norm_sqd)
+    # print('norm squared: ', norm_sqd)
     N = poincare_pts.shape[1]
     result = np.zeros((poincare_pts.shape[0], N + 1), dtype=np.float64)
     result[:, 1:] = (2. / (1. - norm_sqd))[:, np.newaxis] * poincare_pts
@@ -577,7 +612,8 @@ def test_tensor_exp_map():
     new_vars = sess.run(new_vars)
     np_new_vars = np.array(new_vars)
     assert np.array_equal(np_new_vars[2, :], input_points[2, :])
-    assert np.array_equal(np_new_vars[4, :], input_points[4, :])
+    assert np.array_equal(np_new_vars[4, :], input_points[4, :]), 'point with |g|<= 0 was updated'
+    assert np.array_equal(np_new_vars[5, :], input_points[5, :]), 'point with |g|<= 0 was updated'
     assert em1[0, 0] == em1[1, 0]
     assert em1[0, 1] == -em1[1, 1]
     assert em1[2, 0] > em1[0, 0]
@@ -619,22 +655,44 @@ def test_to_hyperboloid_points(N=100):
     assert np.array_equal(np.around(sess.run(minkowski_tensor_dot(hyp_points, hyp_points)), 3), np.array(N * [[-1.]]))
 
 
-# def test_moving_along_hyperboloid():
-#     """
-#     test multiple series of e
-#     :return:
-#     """
-#     points = tf.Variable([[1., 0.], [1., 0.], [1., 0.], [1., 0.]])  # this the minima of the hyperboloid
-#     grads = tf.Variable([[1., 1.], [2., -1.], [3., 2.], [4., 0.]])
-#     retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
-#     sess = tf.Session()
-#     init = tf.global_variables_initializer()
-#     sess.run(init)
-#     for i in range(10):
-#         points = rsgd(grads, points)
-#         # check that the points are on the hyperboloid
-#         norms = minkowski_tensor_dot(points, points)
-#         assert np.array_equal(np.around(sess.run(norms), 3), retval1)
+def test_moving_along_hyperboloid():
+    """
+    test multiple series of updates
+    :return:
+    """
+    from collections import namedtuple
+    grad = namedtuple('grad', 'values indices')
+    input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]], dtype=np.float32)
+    p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
+    indices = tf.constant([0, 1, 3, 4])
+    g1 = tf.constant([[0., 1.], [0., -1.], [1., 2.], [0., 0.]])
+    grad.values = g1
+    grad.indices = indices
+    grads = (grad, 'test_grads')
+    retval1 = np.array([[-1.], [-1.], [-1.], [-1.]])
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    # here the tangent space is x=1
+    pvals = []
+    p1 = rsgd(grads, p1, lr=0.2, max_norm=0.1)
+    for counter in range(20):
+        # print(sess.run(p1))
+        updated_points = tf.nn.embedding_lookup(p1, indices)
+        # check that the points are on the hyperboloid
+        norms = minkowski_tensor_dot(updated_points, updated_points)
+        print('counter: ', counter)
+        # print('norms: ', norms)
+        points_vals, norms_vals = sess.run([p1, norms])
+        print('new points: ', points_vals)
+        print('norms: ', norms_vals)
+        # p1_val, norms_val = sess.run([p1, norms])
+        # print(p1_val, norms_val)
+        # assert np.array_equal(np.around(norms_val, 3), retval1)
+        # new_vars = sess.run(p2)
+        # np_new_vars = np.array(new_vars)
+        # assert np.array_equal(np_new_vars[2, :], input_points[2, :])
+        # assert np.array_equal(np_new_vars[4, :], input_points[4, :])
 
 
 if __name__ == '__main__':

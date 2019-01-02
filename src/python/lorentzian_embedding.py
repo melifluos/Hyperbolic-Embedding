@@ -109,7 +109,7 @@ class cust2vec():
         scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
         return scaled_grad, name
 
-    def rsgd(self, grads, var, lr):
+    def rsgd(self, grads, var, lr=1., max_norm=1000.):
         """
         Perform the Riemannian gradient descent operation by
         1/ Transforming gradients using the Minkowski metric tensor
@@ -121,7 +121,10 @@ class cust2vec():
         :return:
         """
         grad, name = grads
-        minkowski_grads = self.transform_grads(grad.values)
+        clipped_grads = tf.clip_by_norm(grad.values, max_norm, axes=1)
+        # clipped_grads = grad.values
+        minkowski_grads = self.transform_grads(clipped_grads)
+        # minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
         return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
@@ -238,6 +241,39 @@ class cust2vec():
         tangent /= norm
         return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
+    # def tensor_exp_map(self, vars, indices, tangent_grads):
+    #     """
+    #     Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+    #     :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+    #     :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+    #     :return:
+    #     """
+    #     # todo do we need to normalise the gradients?
+    #     hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
+    #     embedding_size = self._options.embedding_size
+    #     batch_size = self._options.batch_size
+    #     # set shape is required as boolean mask can not use tensors of unknown shape
+    #     tangent_grads.set_shape([batch_size, embedding_size + 1])
+    #     norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+    #     # norms.set_shape([batch_size, 1])
+    #     norms.set_shape([None, 1])
+    #     zero = tf.constant(0, dtype=tf.float32)
+    #     nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
+    #     # nonzero_flags = tf.not_equal(norms, zero)
+    #     # nonzero_flags.set_shape([batch_size, 1])
+    #     nonzero_flags.set_shape([None])
+    #     nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
+    #     print('norms shape: ', norms.shape)
+    #     print('nonzero_flags shape: ', nonzero_flags.shape)
+    #     print('tangent grads shape: ', tangent_grads.shape)
+    #     nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
+    #     updated_grads = tf.boolean_mask(tangent_grads, nonzero_flags)
+    #     updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
+    #     normed_grads = tf.divide(updated_grads, nonzero_norms)
+    #     updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
+    #                                                                                 normed_grads)
+    #     return tf.scatter_update(vars, nonzero_indices, updates)
+
     def tensor_exp_map(self, vars, indices, tangent_grads):
         """
         Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
@@ -247,30 +283,13 @@ class cust2vec():
         """
         # todo do we need to normalise the gradients?
         hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
-        embedding_size = self._options.embedding_size
-        batch_size = self._options.batch_size
-        # set shape is required as boolean mask can not use tensors of unknown shape
-        tangent_grads.set_shape([batch_size, embedding_size + 1])
         norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
-        # norms.set_shape([batch_size, 1])
-        norms.set_shape([None, 1])
-        zero = tf.constant(0, dtype=tf.float32)
-        nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
-        # nonzero_flags = tf.not_equal(norms, zero)
-        # nonzero_flags.set_shape([batch_size, 1])
-        nonzero_flags.set_shape([None])
-        nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
-        print('norms shape: ', norms.shape)
-        print('nonzero_flags shape: ', nonzero_flags.shape)
-        print('tangent grads shape: ', tangent_grads.shape)
-        nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
-        updated_grads = tf.boolean_mask(tangent_grads, nonzero_flags)
-        updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
-        normed_grads = tf.divide(updated_grads, nonzero_norms)
-        updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
-                                                                                    normed_grads)
-        return tf.scatter_update(vars, nonzero_indices, updates)
-        # tf.scatter_update(vars, nonzero_indices, updates)
+        normed_grads = tf.divide(tangent_grads, norms)  # norms can be zero, so may contain nan and inf values
+        updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms),
+                                                                                normed_grads)  # norms can also be large sending sinh / cosh -> inf
+        values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
+        safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
+        return tf.scatter_update(vars, indices, safe_updates)
 
     def pairwise_distance(self, examples, samples):
         """
@@ -279,7 +298,7 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        return tf.acosh(-self.minkowski_tensor_dot(examples, samples))
+        return tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -661,7 +680,7 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.2, save_path=log_path, epochs=1, concurrent_steps=1)
+                    initial_learning_rate=0.05, save_path=log_path, epochs=5, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/lorentzian_Win' + '_' + utils.get_timestamp() + '.csv'
 
