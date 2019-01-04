@@ -213,11 +213,7 @@ def edge_list2pairs(edge_list_path, epochs):
     # edges are undirected so need to flip them
     df2 = pd.DataFrame({0: df1[1], 1: df1[0]})
     edge_list = pd.concat((df1, df2), axis=0).values
-    # np.random.shuffle(edge_list)
     all_pairs = np.tile(edge_list, (epochs, 1))
-    # np.random.shuffle(all_pairs)
-    # examples = all_pairs[:, 0].tolist()
-    # labels = [[x] for x in all_pairs[:, 1]]
     return all_pairs
 
 

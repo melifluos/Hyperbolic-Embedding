@@ -6,148 +6,360 @@ from __future__ import division
 from __future__ import print_function
 import sys
 import os
+import datetime
+
+# from lorentzian_embedding import cust2vec, Params
 
 sys.path.append(os.path.join('..', 'src', 'python'))
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 import math
+import utils
 
 
-# class TestClass:
-#     def __init__(self, batch_size, embedding_size, vocab_size):
-#         self.batch_size = batch_size
-#         self.embedding_size = embedding_size
-#         self.vocab_size = vocab_size
-#
-#     def forward(self, examples, labels, init_width=1):
-#         self.emb = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
-#                                name="emb", dtype=tf.float32)
-#
-#         self.sm_w_t = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
-#                                   name="sm_w_t", dtype=tf.float32)
-#
-#         example_emb = tf.nn.embedding_lookup(self.emb, examples)
-#
-#         true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
-#
-#         return example_emb, true_w
-#
-#     def build_graph(self):
-#         true_logits, sampled_logits = self.forward(examples, labels)
-#         loss = self.loss(true_logits, sampled_logits)
-#         self._loss = loss
-#         self.optimize(loss)
-#         # Properly initialize all variables.
-#         tf.global_variables_initializer().run()
-#
-#     def optimise(self):
-#         pass
-#
-#     def loss(self):
-#         pass
-#
-#
-# def generate_batch(skip_window, data, batch_size):
-#     """
-#     A generator that produces the next batch of examples and labels
-#     :param skip_window: The largest distance between an example and a label
-#     :param data:  the random walks
-#     :param batch_size: the number of (input, output) pairs to return
-#     :return:
-#     """
-#     row_index = 0
-#     examples = []
-#     labels = []
-#     while True:
-#         sentence = data[row_index, :]
-#         for pos, word in enumerate(sentence):
-#             # now go over all words from the window, predicting each one in turn
-#             start = max(0, pos - skip_window)
-#             # enumerate takes a second arg, which sets the starting point, this makes pos and pos2 line up
-#             for pos2, word2 in enumerate(sentence[start: pos + skip_window + 1], start):
-#                 if pos2 != pos:
-#                     examples.append(word)
-#                     labels.append([word2])
-#                     if len(examples) == batch_size:
-#                         yield examples, labels
-#                         examples = []
-#                         labels = []
-#         row_index = (row_index + 1) % data.shape[0]
+class Params:
+    def __init__(self, filepath, batch_size, embedding_size, neg_samples, skip_window, num_pairs, statistics_interval,
+                 initial_learning_rate, save_path='', epochs=1, concurrent_steps=10):
+        self.filepath = filepath
+        self.batch_size = batch_size
+        self.embedding_size = embedding_size  # the number of free parameters in the embeddings i.e. the hyperboloid will have embedding_size + 1 dimensions
+        self.num_samples = neg_samples  # The number of negative samples for the entire batch - this should scale with batch size
+        self.skip_window = skip_window
+        # num_pairs NOT CURRENTLY IN USE
+        self.num_pairs = num_pairs  # the total number of (input, output) pairs to train with.
+        self.statistics_interval = statistics_interval  # the number of seconds between snapping
+        self.learning_rate = initial_learning_rate
+        self.epochs_to_train = epochs
+        self.concurrent_steps = concurrent_steps
+        self.save_path = save_path
 
 
-#
-# def main(outpath, walks, unigrams, params):
-#     # initialise the graph
-#     graph = tf.Graph()
-#     # run the tensorflow session
-#     with tf.Session(graph=graph) as session:
-#         # Define the training data
-#         model = Graph2Vecs(unigrams, params)
-#
-#         # initialize all variables in parallel
-#         tf.global_variables_initializer().run()
-#         _ = [print(v) for v in tf.global_variables()]
-#
-#         s = datetime.datetime.now()
-#         print("Initialized")
-#         # define batch generator
-#         batch_gen = generate_batch(params.skip_window, walks, params.batch_size)
-#         data = edge_list2pairs('local_resources/zachary_karate/karate.edgelist', 100)
-#         edge_gen = generate_edge_batch(data, params.batch_size)
-#         average_loss = 0
-#         n_pairs = 0
-#         num_steps = params.num_pairs / params.batch_size
-#         print('running for ', num_steps, ' steps')
-#         for step in xrange(int(num_steps)):
-#             s_batch = datetime.datetime.now()
-#             if step < num_steps / 2:
-#                 batch_inputs, batch_labels = edge_gen.next()
-#             else:
-#                 batch_inputs, batch_labels = batch_gen.next()
-#             lr = model.update_lr(n_pairs)
-#             feed_dict = {model.lr: lr, model.examples: batch_inputs, model.labels: batch_labels}
-#             _, loss_val = session.run([model.train, model.loss], feed_dict=feed_dict)
-#             average_loss += loss_val
-#             n_pairs += params.batch_size
-#             if step % params.logging_interval == 0:
-#                 if step > 0:
-#                     average_loss /= params.logging_interval
-#                 # The average loss is an estimate of the loss over the last 2000 batches.
-#                 runtime = datetime.datetime.now() - s_batch
-#                 print("Average loss at step ", step, ": ", average_loss, 'learning rate is', lr, 'ran in', runtime)
-#                 s_batch = datetime.datetime.now()
-#                 average_loss = 0
-#         # final_embeddings = normalized_embeddings.eval()
-#         final_embedding = model.emb.eval()
-#         np.savetxt(outpath, final_embedding)
-#         # saver.save(session, 'tf_out/test.ckpt')
-#         # ckpt = tf.train.get_checkpoint_state('tf_out')
-#         # saver.restore(session, ckpt.model_checkpoint_path)
-#         # np.savetxt('resources/test/tf_test2.csv', emb.eval())
-#         print('ran in {0} s'.format(datetime.datetime.now() - s))
-#         return final_embedding
+class TestClass:
+    def __init__(self, unigrams, params):
+        self.batch_size = params.batch_size
+        self.embedding_size = params.embedding_size
+        self.vocab_size = len(unigrams)
+        self.unigrams = unigrams
+        self.num_samples = params.num_samples
+        self.lr = params.learning_rate
+        self.build_graph()
+
+    def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
+        """
+        Post: result.shape[1] == poincare_pts.shape[1] + 1
+        """
+        assert np.sqrt(
+            embedding_size) * init_width < 1., 'choice of init_width and embedding size allow points to be initialised outside of the poincare ball'
+        poincare_pts = np.random.uniform(-init_width, init_width, (vocab_size, embedding_size))
+        norm_sqd = (poincare_pts ** 2).sum(axis=1)
+        # the hyperboloid has one extra ambient dimension
+        result = np.zeros((poincare_pts.shape[0], embedding_size + 1), dtype=np.float64)
+        result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
+        result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
+        return result
+
+    def rsgd(self, grads, var, lr=1., max_norm=1.):
+        """
+        Perform the Riemannian gradient descent operation by
+        1/ Transforming gradients using the Minkowski metric tensor
+        2/ Projecting onto the tangent space
+        3/ Applying the exponential map
+        :param grads: (grad, name) tuple where grad is a struct with attributes values and indices
+        :param var:
+        :param lr:
+        :return:
+        """
+        grad, name = grads
+        clipped_grads = tf.clip_by_norm(grad.values, max_norm, axes=1)
+        # clipped_grads = grad.values
+        minkowski_grads = self.transform_grads(clipped_grads)
+        vecs = tf.nn.embedding_lookup(var, grad.indices)
+        tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
+        return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
+
+    def project_tensors_onto_tangent_space(self, hyperboloid_points, ambient_gradients):
+        """
+        project gradients in the ambiant space onto the tangent space
+        :param hyperboloid_point: A point on the hyperboloid
+        :param ambient_gradient: The gradient to project
+        :return: gradients in the tangent spaces of the hyperboloid points
+        """
+        return ambient_gradients + tf.multiply(self.minkowski_tensor_dot(hyperboloid_points, ambient_gradients),
+                                               hyperboloid_points)
+
+    def transform_grads(self, grad):
+        """
+        multiply by the inverse of the Minkowski metric tensor g = diag[-1, 1,1 ... 1] to make the first element of each
+        grad vector negative
+        :param grad: grad matrix of shape (n_vars, embedding_dim)
+        :return:
+        """
+        try:
+            x = np.eye(grad.shape[1])
+        except IndexError:
+            x = np.eye(grad.shape[0])
+            grad = tf.expand_dims(grad, 0)
+        x[0, 0] = -1.
+        T = tf.constant(x, dtype=grad.dtype)
+        return tf.matmul(grad, T)
+
+    def tensor_exp_map(self, vars, indices, tangent_grads):
+        """
+        Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
+        :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
+        :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
+        :return:
+        """
+        # todo do we need to normalise the gradients?
+        hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
+        norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
+        normed_grads = tf.divide(tangent_grads, norms)  # norms can be zero, so may contain nan and inf values
+        updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms),
+                                                                                normed_grads)  # norms can also be large sending sinh / cosh -> inf
+        values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
+        safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
+        return tf.scatter_update(vars, indices, safe_updates)
+
+    def forward(self, examples, labels):
+        init_width = 0.5 / self.embedding_size
+        self.emb = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+                               name="emb", dtype=tf.float32)
+
+        self.sm_w_t = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+                                  name="sm_w_t", dtype=tf.float32)
+
+        self.sm_b = tf.Variable(tf.zeros([self.vocab_size]), name="sm_b")
+        # print('labels shape: ', labels.shape)
+        # print('examples shape: ', examples.shape)
+        labels_matrix = tf.reshape(
+            tf.cast(labels,
+                    dtype=tf.int64),
+            [self.batch_size, 1])
+
+        # Negative sampling.
+        sampled_ids, _, _ = (tf.nn.fixed_unigram_candidate_sampler(
+            true_classes=labels_matrix,
+            num_true=1,
+            num_sampled=self.num_samples,
+            unique=True,  # set to True if all the samples need to be unique
+            range_max=self.vocab_size,
+            distortion=0.75,
+            unigrams=self.unigrams.tolist()))
+
+        # Embeddings for examples: [batch_size, emb_dim]
+        example_emb = tf.nn.embedding_lookup(self.emb, examples)
+
+        # Weights for labels: [batch_size, emb_dim]
+        true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
+        # Biases for labels: [batch_size, 1]
+        true_b = tf.nn.embedding_lookup(self.sm_b, labels)
+
+        # Weights for sampled ids: [num_sampled, emb_dim]
+        sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+        # Biases for sampled ids: [num_sampled, 1]
+        sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
+
+        # True logits: [batch_size, 1]
+        # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
+        # print('example shape: ', example_emb.shape)
+        # print('true_w shape: ', true_w.shape)
+        true_logits = self.minkowski_dist(example_emb, true_w) + true_b
+
+        # Sampled logits: [batch_size, num_sampled]
+        # We replicate sampled noise labels for all examples in the batch
+        # using the matmul.
+        sampled_b_vec = tf.reshape(sampled_b, [self.num_samples])
+        sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
+        # sampled_logits = tf.matmul(example_emb,
+        #                            sampled_w,
+        #                            transpose_b=True) + sampled_b_vec
+        return true_logits, sampled_logits
+
+    def nce_loss(self, true_logits, sampled_logits):
+        """Build the graph for the NCE loss."""
+        # cross-entropy(logits, labels)
+        true_xent = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=tf.ones_like(true_logits), logits=true_logits)
+        sampled_xent = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=tf.zeros_like(sampled_logits), logits=sampled_logits)
+
+        nce_loss_tensor = (tf.reduce_sum(true_xent) +
+                           tf.reduce_sum(sampled_xent)) / self.batch_size
+        return nce_loss_tensor
+
+    def pairwise_distance(self, examples, samples):
+        """
+        creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param samples: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+        """
+        return tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
+
+    def minkowski_tensor_dot(self, u, v):
+        """
+        Minkowski dot product is the same as the Euclidean dot product, but the first element squared is subtracted
+        :param u: a tensor of shape (#examples, dims)
+        :param v: a tensor of shape (#examples, dims)
+        :return: a scalar dot product
+        """
+        # assert u.shape == v.shape, 'minkowski dot product not define for u of shape {} and v of shape'.format(u.shape,                                                                                                              v.shape)
+        hyperboloid_dims = self.embedding_size + 1
+        # try:
+        #     temp = np.eye(u.shape[1])
+        # except IndexError:
+        #     temp = np.eye(u.shape)
+        temp = np.eye(hyperboloid_dims)
+        temp[0, 0] = -1.
+        T = tf.constant(temp, dtype=u.dtype)
+        # make the first column of v negative
+        v_neg = tf.matmul(v, T)
+        return tf.reduce_sum(tf.multiply(u, v_neg), 1, keep_dims=True)  # keep dims for broadcasting
+
+    def pairwise_minkowski_dot(self, u, v):
+        """
+        creates a matrix of minkowski dot products M(i,j) = u[i,:]*v[j,:]
+        :param examples: first set of vectors of shape (ndata1, ndim)
+        :param samples: second set of vectors of shape (ndata2, ndim)
+        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
+        """
+        try:
+            temp = np.eye(u.shape[1])
+        except IndexError:
+            temp = np.eye(u.shape)
+        temp[0, 0] = -1.
+        T = tf.constant(temp, dtype=u.dtype)
+        # make the first column of v negative
+        v_neg = tf.matmul(v, T)
+        return tf.matmul(u, v_neg, transpose_b=True)
+
+    def minkowski_dist(self, u, v):
+        """
+        The distance between points in Minkowski space
+        :param u: tensor of points of shape (examples, dims)
+        :param v: tensor of points of shape (examples, dims)
+        :return: a tensor of distances of shape (examples)
+        """
+        return tf.acosh(-self.minkowski_tensor_dot(u, v))
+
+    def build_graph(self):
+        self.examples = tf.placeholder(tf.int32, shape=[self.batch_size], name='examples')
+        self.labels = tf.placeholder(tf.int32, shape=[self.batch_size], name='labels')
+        true_logits, sampled_logits = self.forward(self.examples, self.labels)
+        loss = self.nce_loss(true_logits, sampled_logits)
+        self._loss = loss
+        self.optimize(loss)
+        # optimizer = tf.train.GradientDescentOptimizer(params.learning_rate)
+        # self.train = optimizer.minimize(self.loss, gate_gradients=optimizer.GATE_NONE)
+
+    def optimize(self, loss):
+
+        optimizer = tf.train.GradientDescentOptimizer(self.lr)
+
+        # grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+        sm_b_grad, emb_grad, sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+        # sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
+
+        self.emb_grad = emb_grad
+        self.sm_w_t_grad = sm_w_t_grad
+        self.sm_b_grad = sm_b_grad
+
+        # gv = [sm_b_grad, emb_grad, sm_w_t_grad]
+        # vars = [self.sm_b, self.emb, self.sm_w_t]
+        gv = [emb_grad, sm_w_t_grad]
+        vars = [self.emb, self.sm_w_t]
+
+        all_update_ops = [optimizer.apply_gradients([self.sm_b_grad])]
+        for var, grad in zip(vars, gv):
+            # get riemannian factor
+            # rescale grad
+            # all_update_ops.append(tf.assign(var, self.rsgd(grad, var, lr)))
+            all_update_ops.append(self.rsgd(grad, var, self.lr))
+            # all_update_ops.append(self.rsgd(grad, var, lr))
+
+        self._train = tf.group(*all_update_ops)
 
 
-def main():
-    """Run the test class."""
-    batch_size = 4
-    embedding_size = 16
-    vocab_size = 32
-    epochs = 1
+def generate_batch(skip_window, data, batch_size):
+    """
+    A generator that produces the next batch of examples and labels
+    :param skip_window: The largest distance between an example and a label
+    :param data:  the random walks
+    :param batch_size: the number of (input, output) pairs to return
+    :return:
+    """
+    row_index = 0
+    examples = []
+    labels = []
+    while True:
+        sentence = data[row_index, :]
+        for pos, word in enumerate(sentence):
+            # now go over all words from the window, predicting each one in turn
+            start = max(0, pos - skip_window)
+            # enumerate takes a second arg, which sets the starting point, this makes pos and pos2 line up
+            for pos2, word2 in enumerate(sentence[start: pos + skip_window + 1], start):
+                if pos2 != pos:
+                    examples.append(word)
+                    labels.append([word2])
+                    if len(examples) == batch_size:
+                        yield examples, labels
+                        examples = []
+                        labels = []
+        row_index = (row_index + 1) % data.shape[0]
+
+
+def test_loss():
+    walk_path = '../local_resources/karate/walks_n1_l10.csv'
+    walks = pd.read_csv(walk_path, header=None).values
+    elems, unigrams = np.unique(walks, return_counts=True)
+    log_path = '.'
+
+    params = Params(walk_path, batch_size=4, embedding_size=2, neg_samples=5, skip_window=5, num_pairs=1000,
+                    statistics_interval=10,
+                    initial_learning_rate=.05, save_path=log_path, epochs=5, concurrent_steps=1)
+    # initialise the graph
     graph = tf.Graph()
     # run the tensorflow session
     with tf.Session(graph=graph) as session:
-        # Build the graph
-        print('initialising model')
-        model = TestClass(batch_size, embedding_size, vocab_size)
+        # Define the training data
+        model = TestClass(unigrams, params)
+
         # initialize all variables in parallel
         tf.global_variables_initializer().run()
         _ = [print(v) for v in tf.global_variables()]
-        # session.run(tf.global_variables_initializer())
-    for training_epoch in xrange(epochs):
-        print('running epoch {}'.format(training_epoch + 1))
-        model.train()  # Process one epoch
+
+        s = datetime.datetime.now()
+        print("Initialized")
+        # define batch generator
+        batch_gen = generate_batch(params.skip_window, walks, params.batch_size)
+        average_loss = 0
+        n_pairs = 0
+        num_steps = params.num_pairs / params.batch_size
+        print('running for ', num_steps, ' steps')
+        for step in xrange(int(num_steps)):
+            s_batch = datetime.datetime.now()
+            batch_inputs, batch_labels = batch_gen.next()
+            # print('examples: ', batch_inputs)
+            feed_dict = {model.examples: batch_inputs, model.labels: np.squeeze(batch_labels)}
+            _, loss_val = session.run([model._train, model._loss], feed_dict=feed_dict)
+            average_loss += loss_val
+            n_pairs += params.batch_size
+            if step % params.statistics_interval == 0:
+                if step > 0:
+                    average_loss /= params.statistics_interval
+                # The average loss is an estimate of the loss over the last 2000 batches.
+                runtime = datetime.datetime.now() - s_batch
+                print("Average loss at step ", step, ": ", average_loss, 'ran in', runtime)
+                s_batch = datetime.datetime.now()
+                average_loss = 0
+        # final_embeddings = normalized_embeddings.eval()
+        final_embedding = model.emb.eval()
+        print('ran in {0} s'.format(datetime.datetime.now() - s))
+        df_final_embedding = pd.DataFrame(data=final_embedding, index=range(final_embedding.shape[0]))
+        path = '../local_resources/karate/embeddings/test_lorentzian_hyp_Win' + '_' + utils.get_timestamp() + '.csv'
+        df_final_embedding.to_csv(path, sep=',')
 
 
 def minkowski_tensor_dot(u, v):
@@ -322,7 +534,8 @@ def tensor_exp_map(vars, indices, tangent_grads):
     hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
     norms = tf.sqrt(tf.maximum(minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
     normed_grads = tf.divide(tangent_grads, norms)  # norms can be zero, so may contain nan and inf values
-    updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms), normed_grads)  # norms can also be large sending sinh / cosh -> inf
+    updates = tf.multiply(tf.cosh(norms), hyperboloid_points) + tf.multiply(tf.sinh(norms),
+                                                                            normed_grads)  # norms can also be large sending sinh / cosh -> inf
     values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
     safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
     return tf.scatter_update(vars, indices, safe_updates)
@@ -358,6 +571,7 @@ def rsgd(grads, var, lr=1, max_norm=1):
     """
     grad, name = grads
     clipped_grads = tf.clip_by_norm(grad.values, max_norm, axes=1)
+    # clipped_grads = grad.values
     minkowski_grads = transform_grads(clipped_grads)
     # minkowski_grads = transform_grads(grad.values)
     vecs = tf.nn.embedding_lookup(var, grad.indices)
@@ -375,6 +589,21 @@ def to_hyperboloid_points(poincare_pts):
     result = np.zeros((poincare_pts.shape[0], N + 1), dtype=np.float64)
     result[:, 1:] = (2. / (1. - norm_sqd))[:, np.newaxis] * poincare_pts
     result[:, 0] = (1. + norm_sqd) / (1. - norm_sqd)
+    return result
+
+
+def params_to_hyperboloid_points(vocab_size, embedding_size, init_width):
+    """
+    Post: result.shape[1] == poincare_pts.shape[1] + 1
+    """
+    assert np.sqrt(
+        embedding_size) * init_width < 1., 'choice of init_width and embedding size allow points to be initialised outside of the poincare ball'
+    poincare_pts = np.random.uniform(-init_width, init_width, (vocab_size, embedding_size))
+    norm_sqd = (poincare_pts ** 2).sum(axis=1)
+    # the hyperboloid has one extra ambient dimension
+    result = np.zeros((poincare_pts.shape[0], embedding_size + 1), dtype=np.float64)
+    result[:, 1:] = (2. / (1 - norm_sqd))[:, np.newaxis] * poincare_pts
+    result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
     return result
 
 
@@ -396,6 +625,37 @@ def to_poincare_ball_points(hyperboloid_pts):
     """
     N = hyperboloid_pts.shape[1]
     return np.divide(hyperboloid_pts[:, 1:N], hyperboloid_pts[:, 0][:, None] + 1)
+
+
+def get_logits(example, label, sample, true_b, sample_b):
+    """
+    produce logits to be used by the loss function
+    :param example:
+    :param label:
+    :param sample:
+    :param true_b:
+    :param sample_b:
+    :return:
+    """
+    true_logits = minkowski_dist(example, label) + true_b
+    sampled_logits = pairwise_minkowski_dist(example, sample) + sample_b
+    return true_logits, sampled_logits
+
+
+def nce_loss(true_logits, sampled_logits):
+    """
+    The noise contrastive estimation loss function
+    :param true_logits:
+    :param sampled_logits:
+    :return:
+    """
+    true_xent = tf.nn.sigmoid_cross_entropy_with_logits(
+        labels=tf.ones_like(true_logits), logits=true_logits)
+    sampled_xent = tf.nn.sigmoid_cross_entropy_with_logits(
+        labels=tf.zeros_like(sampled_logits), logits=sampled_logits)
+    nce_loss_tensor = (tf.reduce_sum(true_xent) +
+                       tf.reduce_sum(sampled_xent)) / 2
+    return nce_loss_tensor
 
 
 def test_to_poincare_ball_point():
@@ -495,6 +755,7 @@ def test_exp_map():
 
 
 def test_minkowski_vector_dot():
+
     u1 = tf.constant([1., 0])
     v1 = tf.constant([1., 0])
     v2 = tf.constant([10., 0])
@@ -509,16 +770,25 @@ def test_minkowski_tensor_dot():
     u1 = tf.constant([[1., 0., 1.], [1., 1., 1.]], dtype=tf.float32)
     v1 = tf.constant([[1., 1., 1.], [0., 0., 1.]], dtype=tf.float32)
     v2 = tf.constant([[2., 1., 1.], [2., 0., 1.]], dtype=tf.float32)
+    u4 = tf.constant([[1.00000012e+00, 3.24688008e-04, 3.21774220e-04]])
+    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04, 1.88534090e-04]])
     retval1 = np.array([[0.], [1.]])
     retval2 = np.array([[-1.], [-1.]])
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
+    u4_norm = sess.run(minkowski_tensor_dot(u4, u4))
+    v4_norm = sess.run(minkowski_tensor_dot(v4, v4))
+    print('u4 norm: ', u4_norm)
+    print('v4 norm: ', v4_norm)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
+    assert u4_norm == -1
+    assert v4_norm == -1
 
 
 def test_pairwise_minkowski_dot():
+    # D_ij = x_i * y_j
     x = np.array([[1, 0], [0, 1]])
     y = np.array([[3, 4], [5, 6]])
     u = tf.Variable(x, dtype=tf.float32)
@@ -535,12 +805,63 @@ def test_minkowski_dist():
     u = tf.constant([[1., 0], [1., 0.]])
     v = tf.constant([[1., 0], [10., 0.]])
     # x = tf.constant([10., 0])
+    N = 100
+    poincare_pts1 = np.divide(np.random.rand(N, 2), np.sqrt(2))
+    poincare_pts2 = np.divide(np.random.rand(N, 2), np.sqrt(2))
+    hyp_points1 = tf.Variable(to_hyperboloid_points(poincare_pts1))
+    hyp_points2 = tf.Variable(to_hyperboloid_points(poincare_pts2))
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     dist = sess.run(minkowski_dist(u, v))
     assert dist[0] == 0
     assert dist[1] != 0
+    # generate some points on the hyperboloid
+    distances = sess.run(minkowski_dist(hyp_points1, hyp_points2))
+    # print(distances)
+    assert np.sum(distances <= 0) == 0
+
+
+def test_pairwise_minkowski_dist():
+    u = tf.constant([[1., 0], [1., 0.]])
+    v = tf.constant([[1., 0], [10., 0.]])
+    u2 = tf.constant([[1.00000012e+00, -4.40269214e-05, -3.25769943e-05]])
+    v2 = tf.constant([[1.00000000e+00, 1.49380328e-04, -5.60168264e-05]])
+    u3 = tf.constant([[1.00000072e+00, 8.21528956e-04, 9.05358582e-04]])
+    v3 = tf.constant([[2.08181834, 0.85871041, 1.61139297]])
+    u4 = tf.constant([[1.00000012e+00, 3.24688008e-04, 3.21774220e-04]])
+    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04, 1.88534090e-04]])
+    # x = tf.constant([10., 0])
+    N = 100
+    poincare_pts1 = np.divide(np.random.rand(N, 2), np.sqrt(2))
+    poincare_pts2 = np.divide(np.random.rand(N, 2), np.sqrt(2))
+    hyp_points1 = tf.Variable(to_hyperboloid_points(poincare_pts1))
+    hyp_points2 = tf.Variable(to_hyperboloid_points(poincare_pts2))
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    dist = sess.run(pairwise_minkowski_dist(u, v))
+    dist2 = sess.run(pairwise_minkowski_dist(u2, v2))
+    print('dist2: ', dist2)
+    dist3 = sess.run(pairwise_minkowski_dist(u3, v3))
+    print('dist3: ', dist3)
+    dist4 = sess.run(pairwise_minkowski_dist(u4, v4))
+    print('dist4: ', dist4)
+
+    assert dist.shape == (2, 2)
+    assert dist[0, 0] == 0.
+    assert dist[1, 0] == 0.
+    assert dist[1, 1] != 0.
+    assert ~np.isnan(dist2)
+    assert ~np.isnan(dist3)
+    assert ~np.isnan(dist4)
+    # generate some points on the hyperboloid
+    distances = sess.run(pairwise_minkowski_dist(hyp_points1, hyp_points2))
+    # print(distances)
+    assert np.sum(distances <= 0) == 0
+    assert distances.shape == (N, N)
+    print('max dist: ', np.max(distances[:]))
+    print('min dist: ', np.min(distances[:]))
 
 
 def test_gradient_transform_single_vector():
@@ -653,6 +974,48 @@ def test_to_hyperboloid_points(N=100):
     init = tf.global_variables_initializer()
     sess.run(init)
     assert np.array_equal(np.around(sess.run(minkowski_tensor_dot(hyp_points, hyp_points)), 3), np.array(N * [[-1.]]))
+
+
+def test_grads_vectors():
+    """
+    tests the gradients of the pairwise and elementwise distance functions with 1 sample, 1 example and 1 label
+    :return:
+    """
+    embedding_size = 2
+    vocab_size = 4
+    emb = tf.Variable(params_to_hyperboloid_points(vocab_size, embedding_size, 0.1), dtype=tf.float32)
+    sm_w_t = tf.Variable(params_to_hyperboloid_points(vocab_size, embedding_size, 0.1), dtype=tf.float32)
+    # sm_w_t = tf.Variable(tf.zeros([vocab_size, embedding_size]))
+    sm_b = tf.Variable(tf.zeros([vocab_size]), dtype=tf.float32)
+
+    examples = tf.Variable([1, 2])
+    labels = tf.Variable([2, 2])
+    sampled_ids = tf.Variable([1, 3])
+
+    example_emb = tf.nn.embedding_lookup(emb, examples)
+    # Weights for labels: [batch_size, emb_dim]
+    true_w = tf.nn.embedding_lookup(sm_w_t, labels)
+    # Biases for labels: [batch_size, 1]
+    true_b = tf.nn.embedding_lookup(sm_b, labels)
+    sampled_w = tf.nn.embedding_lookup(sm_w_t, sampled_ids)
+    print('emb shape: ', example_emb.shape)
+    print('sample w shape: ', sampled_w.shape)
+    # Biases for sampled ids: [num_sampled, 1]
+    sampled_b = tf.nn.embedding_lookup(sm_b, sampled_ids)
+    true_logits, sampled_logits = get_logits(example_emb, true_w, sampled_w, true_b, sampled_b)
+    loss = nce_loss(true_logits, sampled_logits)
+    opt = tf.train.GradientDescentOptimizer(0.1)
+    emb_grad = opt.compute_gradients(loss, [emb])
+    sm_w_t_grad = opt.compute_gradients(loss, [sm_w_t])
+    grads = emb_grad + sm_w_t_grad
+    apply_grad = opt.apply_gradients(grads)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        print('original vectors: ', sess.run([example_emb, true_w]))
+        print('emb grads are: ', sess.run(emb_grad))
+        print('sm_w_t grads are: ', sess.run(sm_w_t_grad))
+        sess.run(apply_grad)
+        print('updated vectors: ', sess.run([example_emb, true_w]))
 
 
 def test_moving_along_hyperboloid():

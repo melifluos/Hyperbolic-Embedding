@@ -73,9 +73,6 @@ class cust2vec():
                            tf.reduce_sum(sampled_xent)) / opts.batch_size
         return nce_loss_tensor
 
-    def sinh(self, x):
-        return 0.5 * (tf.subtract(tf.exp(x), tf.exp(-x)))
-
     def transform_grads(self, grad):
         """
         multiply by the inverse of the Minkowski metric tensor g = diag[-1, 1,1 ... 1] to make the first element of each
@@ -92,24 +89,7 @@ class cust2vec():
         T = tf.constant(x, dtype=grad.dtype)
         return tf.matmul(grad, T)
 
-    def modify_grads(self, grads, emb):
-        """
-        The tensor flow autograd gives us Euclidean gradients. Here we multiply by (1/4)(1-||emb||^2)^2
-        to convert to the hyperbolic gradient
-        :param grads: a list of tuples of [(grads, name),...]
-        :param emb: A tensor embedding
-        :return: The hyperbolic gradient
-        """
-        # scaled_grads = []
-        grad, name = grads
-        vecs = tf.nn.embedding_lookup(emb, grad.indices)
-        norm_squared = tf.square(tf.norm(vecs, axis=0))
-        hyperbolic_factor = 0.25 * tf.square(1 - norm_squared)
-        g = tf.multiply(grad.values, hyperbolic_factor)
-        scaled_grad = tf.IndexedSlices(g, grad.indices, grad.dense_shape)
-        return scaled_grad, name
-
-    def rsgd(self, grads, var, lr=1., max_norm=1000.):
+    def rsgd(self, grads, var, lr=1., max_norm=1.):
         """
         Perform the Riemannian gradient descent operation by
         1/ Transforming gradients using the Minkowski metric tensor
@@ -298,7 +278,8 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        return tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
+        dist = tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
+        return dist
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -323,21 +304,6 @@ class cust2vec():
         norm = tf.nn.l2_normalize(emb_slice, dim=1) - epsilon
         normed_slice = tf.where(comparison, norm, emb_slice)
         return normed_slice
-
-    def clip_norms(self, epsilon=0.00001):
-        """
-        not used as clip_by_norm performs this task
-        :param epsilon:
-        :return:
-        """
-        emb_norms = tf.norm(self.emb, axis=1)
-        sm_norms = tf.norm(self.sm_w_t, axis=1)
-        emb_comparison = tf.greater_equal(emb_norms, tf.constant(1.0, dtype=tf.float32))
-        sm_comparison = tf.greater_equal(sm_norms, tf.constant(1.0, dtype=tf.float32))
-        emb_norms = tf.nn.l2_normalize(self.emb, dim=1) - epsilon
-        sm_norms = tf.nn.l2_normalize(self.sm_w_t, dim=1) - epsilon
-        self._clip_emb = self.emb.assign(tf.where(emb_comparison, emb_norms, self.emb))
-        self._clip_sm = self.sm_w_t.assign(tf.where(sm_comparison, sm_norms, self.sm_w_t))
 
     def remove_nan(self, grad, epsilon=0.001):
         """
@@ -414,12 +380,12 @@ class cust2vec():
         for i, w in enumerate(self._id2word):
             self._word2id[w] = i
         true_logits, sampled_logits = self.forward(self.examples, self.labels)
+        self.true_logits = true_logits
+        self.sampled_logits = sampled_logits
         loss = self.nce_loss(true_logits, sampled_logits)
         tf.summary.scalar("NCE_loss", loss)
         self._loss = loss
         self.optimize(loss)
-        # add operator to clip embeddings inside the poincare ball
-        self.clip_norms()
         # Properly initialize all variables.
         tf.global_variables_initializer().run()
         # Add opp to save variables
@@ -451,9 +417,12 @@ class cust2vec():
         last_words, last_time, last_summary_time = initial_words, time.time(), 0
         while True:
             time.sleep(opts.statistics_interval)  # Reports our progress once a while.
-            (epoch, step, loss, words, lr, examples, labels, grads, mod_grads) = self._session.run(
+            (epoch, step, loss, words, lr, examples, labels, samples, true_logits, sampled_logits, emb, smw_t, sm_b,
+             emb_grads,
+             smwt_grads, dist, example_emb, sampled_w) = self._session.run(
                 [self._epoch, self.global_step, self._loss, self._words, self._lr, self.examples,
-                 self.labels, self.emb_grad, self.sm_w_t_grad])
+                 self.labels, self.samples, self.true_logits, self.sampled_logits, self.emb, self.sm_w_t, self.sm_b,
+                 self.emb_grad, self.sm_w_t_grad, self.dist, self.example_emb, self.sampled_w])
             assert len(examples) == opts.batch_size
             assert len(labels) == opts.batch_size
             # print('global step: ', step)
@@ -467,7 +436,18 @@ class cust2vec():
                                                                                                            loss,
                                                                                                            rate,
                                                                                                            words))
-            # print("labels: ", labels, " examples: ", examples)
+            if np.isnan(loss):
+                print('true logits: ', true_logits)
+                print('sampled logits: ', sampled_logits)
+                print("labels: ", labels, " examples: ", examples, "samples: ", samples)
+                print('example embedding: ', emb[examples, :])
+                print('label embedding: ', smw_t[labels, :])
+                print('sample embedding: ', smw_t[samples, :])
+                print('sm_b: ', sm_b)
+                print('dist: ', dist)
+                print('example emb: ', example_emb)
+                print('sample_w: ', sampled_w)
+
             # print("grads are {0}".format(grads))
             #
             # print("modified grads are {0}".format(mod_grads))
@@ -535,7 +515,7 @@ class cust2vec():
         # Embedding: [vocab_size, emb_dim]
         opts = self._options
         with tf.name_scope('model'):
-            init_width = 0.5 / opts.embedding_size
+            init_width = 0.5 / (1 * opts.embedding_size)
 
             self.emb = tf.Variable(self.to_hyperboloid_points(opts.vocab_size, opts.embedding_size, init_width),
                                    name="emb", dtype=tf.float32)
@@ -566,6 +546,7 @@ class cust2vec():
 
             # Embeddings for examples: [batch_size, emb_dim]
             example_emb = tf.nn.embedding_lookup(self.emb, examples)
+            self.example_emb = example_emb
             # example_emb = self.clip_indexed_slices_norms(unorm_emb)
             # example_hist = tf.summary.histogram('input embeddings', example_emb)
 
@@ -587,8 +568,11 @@ class cust2vec():
                 distortion=0.75,
                 unigrams=opts.vocab_counts.tolist()))
 
+            self.samples = sampled_ids
+
             # Weights for sampled ids: [num_sampled, emb_dim]
             sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+            self.sampled_w = sampled_w
 
             # sampled_w = self.clip_indexed_slices_norms(unorm_sampled_w)
             # Biases for sampled ids: [num_sampled, 1]
@@ -601,17 +585,16 @@ class cust2vec():
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
-            # using the matmul.
             sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
-            # sampled_logits = tf.matmul(example_emb,
-            #                            sampled_w,
-            #                            transpose_b=True) + sampled_b_vec
-            sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
+
+            dist = self.pairwise_distance(example_emb, sampled_w)
+            self.dist = dist
+            sampled_logits = dist + sampled_b_vec
             print('sampled logits shape: ', sampled_logits.shape)
         return true_logits, sampled_logits
 
 
-def main(params):
+def main(params, path1, path2):
     """Train a word2vec model in steps of epochs - this is consistent with the tensorflow code."""
     with tf.Graph().as_default(), tf.Session() as session:
         with tf.device("/cpu:0"):
@@ -624,6 +607,10 @@ def main(params):
             model.train()  # Process one epoch
         # Perform a final save.
         hyperboloid_emb_in, hyperboloid_emb_out = model._session.run([model.emb, model.sm_w_t])
+        df_hyp_in = pd.DataFrame(data=hyperboloid_emb_in, index=range(hyperboloid_emb_in.shape[0]))
+        df_hyp_in.to_csv(path1, sep=',')
+        df_hyp_out = pd.DataFrame(data=hyperboloid_emb_out, index=range(hyperboloid_emb_out.shape[0]))
+        df_hyp_out.to_csv(path2, sep=',')
         emb_in = model.to_poincare_ball_points(hyperboloid_emb_in)
         emb_out = model.to_poincare_ball_points(hyperboloid_emb_out)
 
@@ -680,11 +667,13 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.05, save_path=log_path, epochs=5, concurrent_steps=1)
+                    initial_learning_rate=1., save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/lorentzian_Win' + '_' + utils.get_timestamp() + '.csv'
+    hyp_path_in = '../../local_resources/karate/embeddings/lorentzian_hyp_Win' + '_' + utils.get_timestamp() + '.csv'
+    hyp_path_out = '../../local_resources/karate/embeddings/lorentzian_hyp_Wout' + '_' + utils.get_timestamp() + '.csv'
 
-    embedding_in, embedding_out = main(params)
+    embedding_in, embedding_out = main(params, hyp_path_in, hyp_path_out)
     visualisation.plot_poincare_embedding(embedding_in, y,
                                           '../../results/karate/figs/lorentzian_Win' + '_' + utils.get_timestamp() + '.pdf')
     visualisation.plot_poincare_embedding(embedding_out, y,

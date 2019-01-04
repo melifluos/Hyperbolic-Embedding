@@ -1,1 +1,3 @@
-{}
+{
+  "test_lorentzian_embedding.py::test_minkowski_tensor_dot": true
+}
