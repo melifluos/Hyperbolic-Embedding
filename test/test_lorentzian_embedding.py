@@ -658,6 +658,21 @@ def nce_loss(true_logits, sampled_logits):
     return nce_loss_tensor
 
 
+def nickel_initialisation(vocab_size, embedding_size, init_width=0.001):
+    """
+    The scheme for initialising points on the hyperboloid used by Nickel and Kiela 18
+    :param vocab_size: number of vectors
+    :param embedding_size: dimension of each vector
+    :param init_width: sample points from (-init_width, init_width) uniformly. 0.001 is the value published by Nickel and Kiela
+    :return:
+    """
+    hyperboloid_points = np.zeros((vocab_size, embedding_size+1))
+    hyperboloid_points[:, 1:] = np.random.uniform(-init_width, init_width,
+                                                                size=(vocab_size, embedding_size))
+    hyperboloid_points[:, 0] = np.sqrt((hyperboloid_points[:, 1:embedding_size] ** 2).sum(axis=1) + 1)
+    return hyperboloid_points
+
+
 def test_to_poincare_ball_point():
     hyperboloid_point = np.array([1., 0., 0.])
     poincare_point = to_poincare_ball_point(hyperboloid_point)
@@ -755,7 +770,6 @@ def test_exp_map():
 
 
 def test_minkowski_vector_dot():
-
     u1 = tf.constant([1., 0])
     v1 = tf.constant([1., 0])
     v2 = tf.constant([10., 0])
@@ -781,6 +795,8 @@ def test_minkowski_tensor_dot():
     v4_norm = sess.run(minkowski_tensor_dot(v4, v4))
     print('u4 norm: ', u4_norm)
     print('v4 norm: ', v4_norm)
+    dot4 = sess.run(minkowski_tensor_dot(u4, v4))
+    print('dot4: ', dot4)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
     assert u4_norm == -1
@@ -974,6 +990,16 @@ def test_to_hyperboloid_points(N=100):
     init = tf.global_variables_initializer()
     sess.run(init)
     assert np.array_equal(np.around(sess.run(minkowski_tensor_dot(hyp_points, hyp_points)), 3), np.array(N * [[-1.]]))
+
+
+def test_nickel_initialisation():
+    N = 100
+    embedding_size = 3
+    hyp_points = tf.Variable(nickel_initialisation(N, embedding_size))
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    np.testing.assert_array_almost_equal(sess.run(minkowski_tensor_dot(hyp_points, hyp_points)), np.array(N * [[-1.]]))
 
 
 def test_grads_vectors():

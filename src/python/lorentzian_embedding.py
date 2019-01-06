@@ -124,6 +124,20 @@ class cust2vec():
         result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
         return result
 
+    def nickel_initialisation(self, vocab_size, embedding_size, init_width=0.001):
+        """
+        The scheme for initialising points on the hyperboloid used by Nickel and Kiela 18
+        :param vocab_size: number of vectors
+        :param embedding_size: dimension of each vector
+        :param init_width: sample points from (-init_width, init_width) uniformly. 0.001 is the value published by Nickel and Kiela
+        :return:
+        """
+        hyperboloid_points = np.zeros((vocab_size, embedding_size+1))
+        hyperboloid_points[:, 1:] = np.random.uniform(-init_width, init_width,
+                                                                    size=(vocab_size, embedding_size))
+        hyperboloid_points[:, 0] = np.sqrt((hyperboloid_points[:, 1:embedding_size] ** 2).sum(axis=1) + 1)
+        return hyperboloid_points
+
     def to_poincare_ball_points(self, hyperboloid_pts):
         """
         project from hyperboloid to poincare ball
@@ -517,12 +531,12 @@ class cust2vec():
         with tf.name_scope('model'):
             init_width = 0.5 / (1 * opts.embedding_size)
 
-            self.emb = tf.Variable(self.to_hyperboloid_points(opts.vocab_size, opts.embedding_size, init_width),
+            self.emb = tf.Variable(self.nickel_initialisation(opts.vocab_size, opts.embedding_size, init_width),
                                    name="emb", dtype=tf.float32)
 
             emb_hist = tf.summary.histogram('embedding', self.emb)
 
-            self.sm_w_t = tf.Variable(self.to_hyperboloid_points(opts.vocab_size, opts.embedding_size, init_width),
+            self.sm_w_t = tf.Variable(self.nickel_initialisation(opts.vocab_size, opts.embedding_size, init_width),
                                       name="sm_w_t", dtype=tf.float32)
 
             smw_hist = tf.summary.histogram('softmax_weight', self.sm_w_t)
