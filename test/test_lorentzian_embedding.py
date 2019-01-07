@@ -60,6 +60,20 @@ class TestClass:
         result[:, 0] = (1 + norm_sqd) / (1 - norm_sqd)
         return result
 
+    def nickel_initialisation(self, vocab_size, embedding_size, init_width=0.001):
+        """
+        The scheme for initialising points on the hyperboloid used by Nickel and Kiela 18
+        :param vocab_size: number of vectors
+        :param embedding_size: dimension of each vector
+        :param init_width: sample points from (-init_width, init_width) uniformly. 0.001 is the value published by Nickel and Kiela
+        :return:
+        """
+        hyperboloid_points = np.zeros((vocab_size, embedding_size + 1))
+        hyperboloid_points[:, 1:] = np.random.uniform(-init_width, init_width,
+                                                      size=(vocab_size, embedding_size))
+        hyperboloid_points[:, 0] = np.sqrt((hyperboloid_points[:, 1:embedding_size] ** 2).sum(axis=1) + 1)
+        return hyperboloid_points
+
     def rsgd(self, grads, var, lr=1., max_norm=1.):
         """
         Perform the Riemannian gradient descent operation by
@@ -105,6 +119,17 @@ class TestClass:
         T = tf.constant(x, dtype=grad.dtype)
         return tf.matmul(grad, T)
 
+    def project_onto_manifold(self, tensor):
+        """
+        project a tensor back onto the hyperboloid by fixing the first coordinate to sqrt(|x[1:]|^2 + 1)
+        :param tensor: a tensor of shape (examples, dimensions) where dimensions > 2
+        :return:
+        """
+        kept_values = tensor[:, 1:]
+        norm_square = tf.square(kept_values)
+        new_vals = tf.expand_dims(tf.sqrt(tf.reduce_sum(norm_square, axis=1) + 1), axis=1)
+        return tf.concat([new_vals, kept_values], axis=1)
+
     def tensor_exp_map(self, vars, indices, tangent_grads):
         """
         Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
@@ -120,14 +145,21 @@ class TestClass:
                                                                                 normed_grads)  # norms can also be large sending sinh / cosh -> inf
         values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
         safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
+        safe_updates = self.project_onto_manifold(safe_updates)
         return tf.scatter_update(vars, indices, safe_updates)
 
     def forward(self, examples, labels):
         init_width = 0.5 / self.embedding_size
-        self.emb = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+        # self.emb = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+        #                        name="emb", dtype=tf.float32)
+        #
+        # self.sm_w_t = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+        #                           name="sm_w_t", dtype=tf.float32)
+
+        self.emb = tf.Variable(self.nickel_initialisation(self.vocab_size, self.embedding_size, init_width),
                                name="emb", dtype=tf.float32)
 
-        self.sm_w_t = tf.Variable(self.to_hyperboloid_points(self.vocab_size, self.embedding_size, init_width),
+        self.sm_w_t = tf.Variable(self.nickel_initialisation(self.vocab_size, self.embedding_size, init_width),
                                   name="sm_w_t", dtype=tf.float32)
 
         self.sm_b = tf.Variable(tf.zeros([self.vocab_size]), name="sm_b")
@@ -148,8 +180,11 @@ class TestClass:
             distortion=0.75,
             unigrams=self.unigrams.tolist()))
 
+        self.samples = sampled_ids
+
         # Embeddings for examples: [batch_size, emb_dim]
         example_emb = tf.nn.embedding_lookup(self.emb, examples)
+        self.example_emb = example_emb
 
         # Weights for labels: [batch_size, emb_dim]
         true_w = tf.nn.embedding_lookup(self.sm_w_t, labels)
@@ -158,6 +193,7 @@ class TestClass:
 
         # Weights for sampled ids: [num_sampled, emb_dim]
         sampled_w = tf.nn.embedding_lookup(self.sm_w_t, sampled_ids)
+        self.sampled_w = sampled_w
         # Biases for sampled ids: [num_sampled, 1]
         sampled_b = tf.nn.embedding_lookup(self.sm_b, sampled_ids)
 
@@ -165,13 +201,21 @@ class TestClass:
         # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
         # print('example shape: ', example_emb.shape)
         # print('true_w shape: ', true_w.shape)
-        true_logits = self.minkowski_dist(example_emb, true_w) + true_b
+        dist = self.minkowski_dist(example_emb, true_w)
+        true_logits = dist + true_b
+        self.dist = dist
+        self.true_logits = true_logits
 
         # Sampled logits: [batch_size, num_sampled]
         # We replicate sampled noise labels for all examples in the batch
         # using the matmul.
         sampled_b_vec = tf.reshape(sampled_b, [self.num_samples])
-        sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
+
+        pairwise_dist = self.pairwise_distance(example_emb, sampled_w)
+        self.pairwise_dist = pairwise_dist
+        sampled_logits = dist + sampled_b_vec
+        # sampled_logits = self.pairwise_distance(example_emb, sampled_w) + sampled_b_vec
+        self.sampled_logits = sampled_logits
         # sampled_logits = tf.matmul(example_emb,
         #                            sampled_w,
         #                            transpose_b=True) + sampled_b_vec
@@ -196,7 +240,7 @@ class TestClass:
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        return tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
+        return tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.))
 
     def minkowski_tensor_dot(self, u, v):
         """
@@ -242,7 +286,7 @@ class TestClass:
         :param v: tensor of points of shape (examples, dims)
         :return: a tensor of distances of shape (examples)
         """
-        return tf.acosh(-self.minkowski_tensor_dot(u, v))
+        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -1.))
 
     def build_graph(self):
         self.examples = tf.placeholder(tf.int32, shape=[self.batch_size], name='examples')
@@ -251,16 +295,26 @@ class TestClass:
         loss = self.nce_loss(true_logits, sampled_logits)
         self._loss = loss
         self.optimize(loss)
-        # optimizer = tf.train.GradientDescentOptimizer(params.learning_rate)
-        # self.train = optimizer.minimize(self.loss, gate_gradients=optimizer.GATE_NONE)
+
+    def remove_nan(self, grad, epsilon=0.001):
+        """
+        replace nans in gradients caused by comparing two indentical vectors with a small gradient
+        :param grad: a tf.IndexedSlicesValue
+        :param epsilon: the value to set nan values to
+        :return: the tensor with nans replaced by epsilon
+        """
+        g1 = tf.where(tf.is_nan(grad.values), tf.ones_like(grad.values) * epsilon, grad.values)
+        g2 = tf.where(tf.is_inf(g1), tf.ones_like(g1) * epsilon, g1)
+        safe_grad = tf.IndexedSlices(g2, grad.indices, grad.dense_shape)
+        return safe_grad
 
     def optimize(self, loss):
 
         optimizer = tf.train.GradientDescentOptimizer(self.lr)
 
         # grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
-        sm_b_grad, emb_grad, sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
-        # sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
+        grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+        sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
         self.emb_grad = emb_grad
         self.sm_w_t_grad = sm_w_t_grad
@@ -316,9 +370,9 @@ def test_loss():
     elems, unigrams = np.unique(walks, return_counts=True)
     log_path = '.'
 
-    params = Params(walk_path, batch_size=4, embedding_size=2, neg_samples=5, skip_window=5, num_pairs=1000,
+    params = Params(walk_path, batch_size=2, embedding_size=2, neg_samples=2, skip_window=5, num_pairs=400,
                     statistics_interval=10,
-                    initial_learning_rate=.05, save_path=log_path, epochs=5, concurrent_steps=1)
+                    initial_learning_rate=1., save_path=log_path, epochs=5, concurrent_steps=1)
     # initialise the graph
     graph = tf.Graph()
     # run the tensorflow session
@@ -343,7 +397,30 @@ def test_loss():
             batch_inputs, batch_labels = batch_gen.next()
             # print('examples: ', batch_inputs)
             feed_dict = {model.examples: batch_inputs, model.labels: np.squeeze(batch_labels)}
-            _, loss_val = session.run([model._train, model._loss], feed_dict=feed_dict)
+
+            # _, loss_val = session.run([model._train, model._loss], feed_dict=feed_dict)
+
+            (_, loss_val, examples, labels, samples, true_logits, sampled_logits, emb, smw_t, sm_b,
+             dist, pairwise_dist, example_emb, sampled_w, sm_b_grad) \
+                = session.run([model._train, model._loss, model.examples, model.labels, model.samples,
+                               model.true_logits, model.sampled_logits, model.emb, model.sm_w_t, model.sm_b,
+                               model.dist, model.pairwise_dist, model.example_emb, model.sampled_w, model.sm_b_grad],
+                              feed_dict=feed_dict)
+
+            if np.isnan(loss_val):
+                print('true logits: ', true_logits)
+                print('sampled logits: ', sampled_logits)
+                print("labels: ", labels, " examples: ", examples, "samples: ", samples)
+                print('example embedding: ', emb[examples, :])
+                print('label embedding: ', smw_t[labels, :])
+                print('sample embedding: ', smw_t[samples, :])
+                print('sm_b: ', sm_b)
+                print('sm_b grads: ', sm_b_grad)
+                print('dist: ', dist)
+                print('pairwise dist: ', pairwise_dist)
+                print('example emb: ', example_emb)
+                print('sample_w: ', sampled_w)
+
             average_loss += loss_val
             n_pairs += params.batch_size
             if step % params.statistics_interval == 0:
@@ -439,7 +516,7 @@ def minkowski_dist(u, v):
     :param v: tensor of points of shape (examples, dims)
     :return: a tensor of distances of shape (examples)
     """
-    return tf.acosh(-minkowski_tensor_dot(u, v))
+    return tf.acosh(-tf.minimum(minkowski_tensor_dot(u, v), -1.))
 
 
 def pairwise_minkowski_dist(u, v):
@@ -449,7 +526,7 @@ def pairwise_minkowski_dist(u, v):
     :param samples: second set of vectors of shape (ndata2, ndim)
     :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
     """
-    return tf.acosh(-pairwise_minkowski_dot(u, v))
+    return tf.acosh(-tf.minimum(pairwise_minkowski_dot(u, v), -1.))
 
 
 def project_onto_tangent_space(hyperboloid_point, ambient_gradient):
@@ -666,11 +743,33 @@ def nickel_initialisation(vocab_size, embedding_size, init_width=0.001):
     :param init_width: sample points from (-init_width, init_width) uniformly. 0.001 is the value published by Nickel and Kiela
     :return:
     """
-    hyperboloid_points = np.zeros((vocab_size, embedding_size+1))
+    hyperboloid_points = np.zeros((vocab_size, embedding_size + 1))
     hyperboloid_points[:, 1:] = np.random.uniform(-init_width, init_width,
-                                                                size=(vocab_size, embedding_size))
+                                                  size=(vocab_size, embedding_size))
     hyperboloid_points[:, 0] = np.sqrt((hyperboloid_points[:, 1:embedding_size] ** 2).sum(axis=1) + 1)
     return hyperboloid_points
+
+
+def project_onto_manifold(tensor):
+    """
+    project a tensor back onto the hyperboloid by fixing the first coordinate to sqrt(|x[1:]|^2 + 1)
+    :param tensor: a tensor of shape (examples, dimensions) where dimensions > 2
+    :return:
+    """
+    kept_values = tensor[:, 1:]
+    norm_square = tf.square(kept_values)
+    new_vals = tf.expand_dims(tf.sqrt(tf.reduce_sum(norm_square, axis=1) + 1), axis=1)
+    return tf.concat([new_vals, kept_values], axis=1)
+
+
+def test_project_onto_manifold():
+    init_value = tf.Variable([[1., 1., 1.], [2., -1., 2.], [3., 2., 3.], [4., 0., 4.]])
+    retval = np.array([[-1.], [-1.], [-1.], [-1.]])
+    tensor = project_onto_manifold(init_value)
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    np.testing.assert_almost_equal(retval, sess.run(minkowski_tensor_dot(tensor, tensor)), decimal=5)
 
 
 def test_to_poincare_ball_point():
@@ -785,7 +884,7 @@ def test_minkowski_tensor_dot():
     v1 = tf.constant([[1., 1., 1.], [0., 0., 1.]], dtype=tf.float32)
     v2 = tf.constant([[2., 1., 1.], [2., 0., 1.]], dtype=tf.float32)
     u4 = tf.constant([[1.00000012e+00, 3.24688008e-04, 3.21774220e-04]])
-    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04, 1.88534090e-04]])
+    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04, 1.88534090e-04]])  # this one should have an invalid norm
     retval1 = np.array([[0.], [1.]])
     retval2 = np.array([[-1.], [-1.]])
     sess = tf.Session()
@@ -799,8 +898,8 @@ def test_minkowski_tensor_dot():
     print('dot4: ', dot4)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v1)), retval1)
     assert np.array_equal(sess.run(minkowski_tensor_dot(u1, v2)), retval2)
-    assert u4_norm == -1
-    assert v4_norm == -1
+    assert u4_norm == -1.
+    assert v4_norm == -0.99999982
 
 
 def test_pairwise_minkowski_dot():
@@ -846,7 +945,8 @@ def test_pairwise_minkowski_dist():
     u3 = tf.constant([[1.00000072e+00, 8.21528956e-04, 9.05358582e-04]])
     v3 = tf.constant([[2.08181834, 0.85871041, 1.61139297]])
     u4 = tf.constant([[1.00000012e+00, 3.24688008e-04, 3.21774220e-04]])
-    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04, 1.88534090e-04]])
+    v4 = tf.constant([[1.00000000e+00, 3.61118466e-04,
+                       1.88534090e-04]])  # this is slightly off the manifold and causes nan distances
     # x = tf.constant([10., 0])
     N = 100
     poincare_pts1 = np.divide(np.random.rand(N, 2), np.sqrt(2))
@@ -870,7 +970,7 @@ def test_pairwise_minkowski_dist():
     assert dist[1, 1] != 0.
     assert ~np.isnan(dist2)
     assert ~np.isnan(dist3)
-    assert ~np.isnan(dist4)
+    assert dist4 == 0
     # generate some points on the hyperboloid
     distances = sess.run(pairwise_minkowski_dist(hyp_points1, hyp_points2))
     # print(distances)
@@ -1050,6 +1150,8 @@ def test_moving_along_hyperboloid():
     :return:
     """
     from collections import namedtuple
+    learning_rate = 0.5
+    max_grad_norm = 1.
     grad = namedtuple('grad', 'values indices')
     input_points = np.array([[1., 0.], [1., 0.], [4., 5.], [1., 0.], [1., 0.]], dtype=np.float32)
     p1 = tf.Variable(input_points, dtype=tf.float32)  # this the minima of the hyperboloid
@@ -1064,7 +1166,7 @@ def test_moving_along_hyperboloid():
     sess.run(init)
     # here the tangent space is x=1
     pvals = []
-    p1 = rsgd(grads, p1, lr=0.2, max_norm=0.1)
+    p1 = rsgd(grads, p1, lr=learning_rate, max_norm=max_grad_norm)
     for counter in range(20):
         # print(sess.run(p1))
         updated_points = tf.nn.embedding_lookup(p1, indices)
@@ -1080,8 +1182,8 @@ def test_moving_along_hyperboloid():
         # assert np.array_equal(np.around(norms_val, 3), retval1)
         # new_vars = sess.run(p2)
         # np_new_vars = np.array(new_vars)
-        # assert np.array_equal(np_new_vars[2, :], input_points[2, :])
-        # assert np.array_equal(np_new_vars[4, :], input_points[4, :])
+        assert np.array_equal(points_vals[2, :], input_points[2, :])
+        assert np.array_equal(points_vals[4, :], input_points[4, :])
 
 
 if __name__ == '__main__':

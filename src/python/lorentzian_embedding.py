@@ -132,9 +132,9 @@ class cust2vec():
         :param init_width: sample points from (-init_width, init_width) uniformly. 0.001 is the value published by Nickel and Kiela
         :return:
         """
-        hyperboloid_points = np.zeros((vocab_size, embedding_size+1))
+        hyperboloid_points = np.zeros((vocab_size, embedding_size + 1))
         hyperboloid_points[:, 1:] = np.random.uniform(-init_width, init_width,
-                                                                    size=(vocab_size, embedding_size))
+                                                      size=(vocab_size, embedding_size))
         hyperboloid_points[:, 0] = np.sqrt((hyperboloid_points[:, 1:embedding_size] ** 2).sum(axis=1) + 1)
         return hyperboloid_points
 
@@ -166,12 +166,7 @@ class cust2vec():
         :param v: a tensor of shape (#examples, dims)
         :return: a scalar dot product
         """
-        # assert u.shape == v.shape, 'minkowski dot product not define for u of shape {} and v of shape'.format(u.shape,                                                                                                              v.shape)
         hyperboloid_dims = self._options.embedding_size + 1
-        # try:
-        #     temp = np.eye(u.shape[1])
-        # except IndexError:
-        #     temp = np.eye(u.shape)
         temp = np.eye(hyperboloid_dims)
         temp[0, 0] = -1.
         T = tf.constant(temp, dtype=u.dtype)
@@ -203,7 +198,7 @@ class cust2vec():
         :param v: tensor of points of shape (examples, dims)
         :return: a tensor of distances of shape (examples)
         """
-        return tf.acosh(-self.minkowski_tensor_dot(u, v))
+        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -1.))
 
     def project_onto_tangent_space(self, hyperboloid_point, minkowski_tangent):
         """
@@ -283,6 +278,7 @@ class cust2vec():
                                                                                 normed_grads)  # norms can also be large sending sinh / cosh -> inf
         values_to_replace = tf.logical_or(tf.is_nan(updates), tf.is_inf(updates))
         safe_updates = tf.where(values_to_replace, hyperboloid_points, updates)
+        safe_updates = self.project_onto_manifold(safe_updates)
         return tf.scatter_update(vars, indices, safe_updates)
 
     def pairwise_distance(self, examples, samples):
@@ -292,7 +288,7 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        dist = tf.acosh(-self.pairwise_minkowski_dot(examples, samples))
+        dist = tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.))
         return dist
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
@@ -330,6 +326,27 @@ class cust2vec():
         g2 = tf.where(tf.is_inf(g1), tf.ones_like(g1) * epsilon, g1)
         safe_grad = tf.IndexedSlices(g2, grad.indices, grad.dense_shape)
         return safe_grad
+
+    # def project_onto_manifold(self, tensor):
+    #     """
+    #     project a tensor back onto the hyperboloid by fixing the first coordinate to sqrt(|x[1:]|^2 + 1)
+    #     :param tensor: a tensor of shape (examples, dimensions) where dimensions > 2
+    #     :return:
+    #     """
+    #     norm_square = tf.square(tensor[:, 1:])
+    #     first_coord = tf.sqrt(tf.reduce_sum(norm_square, axis=1) + 1)
+    #     return tensor[:, 0].assign(first_coord)
+
+    def project_onto_manifold(self, tensor):
+        """
+        project a tensor back onto the hyperboloid by fixing the first coordinate to sqrt(|x[1:]|^2 + 1)
+        :param tensor: a tensor of shape (examples, dimensions) where dimensions > 2
+        :return:
+        """
+        kept_values = tensor[:, 1:]
+        norm_square = tf.square(kept_values)
+        new_vals = tf.expand_dims(tf.sqrt(tf.reduce_sum(norm_square, axis=1) + 1), axis=1)
+        return tf.concat([new_vals, kept_values], axis=1)
 
     def optimize(self, loss):
         """Build the graph to optimize the loss function."""
