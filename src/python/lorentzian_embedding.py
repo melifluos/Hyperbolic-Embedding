@@ -181,10 +181,8 @@ class cust2vec():
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        try:
-            temp = np.eye(u.shape[1])
-        except IndexError:
-            temp = np.eye(u.shape)
+        hyperboloid_dims = self._options.embedding_size + 1
+        temp = np.eye(hyperboloid_dims)
         temp[0, 0] = -1.
         T = tf.constant(temp, dtype=u.dtype)
         # make the first column of v negative
@@ -662,7 +660,7 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=0.1, save_path=log_path, epochs=1, concurrent_steps=1)
+                    initial_learning_rate=0.5, save_path=log_path, epochs=5, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/lorentzian_Win' + '_' + utils.get_timestamp() + '.csv'
     hyp_path_in = '../../local_resources/karate/embeddings/lorentzian_hyp_Win' + '_' + utils.get_timestamp() + '.csv'

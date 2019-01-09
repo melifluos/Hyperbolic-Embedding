@@ -249,12 +249,7 @@ class TestClass:
         :param v: a tensor of shape (#examples, dims)
         :return: a scalar dot product
         """
-        # assert u.shape == v.shape, 'minkowski dot product not define for u of shape {} and v of shape'.format(u.shape,                                                                                                              v.shape)
         hyperboloid_dims = self.embedding_size + 1
-        # try:
-        #     temp = np.eye(u.shape[1])
-        # except IndexError:
-        #     temp = np.eye(u.shape)
         temp = np.eye(hyperboloid_dims)
         temp[0, 0] = -1.
         T = tf.constant(temp, dtype=u.dtype)
