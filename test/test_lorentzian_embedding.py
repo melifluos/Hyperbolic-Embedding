@@ -91,7 +91,7 @@ class TestClass:
         minkowski_grads = self.transform_grads(clipped_grads)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
-        return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
+        return self.tensor_exp_map(var, grad.indices, -lr * tangent_grads)
 
     def project_tensors_onto_tangent_space(self, hyperboloid_points, ambient_gradients):
         """
@@ -240,7 +240,7 @@ class TestClass:
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        return tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.))
+        return tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.001))
 
     def minkowski_tensor_dot(self, u, v):
         """
@@ -286,7 +286,7 @@ class TestClass:
         :param v: tensor of points of shape (examples, dims)
         :return: a tensor of distances of shape (examples)
         """
-        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -1.))
+        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -1.001))
 
     def build_graph(self):
         self.examples = tf.placeholder(tf.int32, shape=[self.batch_size], name='examples')
@@ -370,9 +370,9 @@ def test_loss():
     elems, unigrams = np.unique(walks, return_counts=True)
     log_path = '.'
 
-    params = Params(walk_path, batch_size=2, embedding_size=2, neg_samples=2, skip_window=5, num_pairs=400,
+    params = Params(walk_path, batch_size=2, embedding_size=2, neg_samples=2, skip_window=5, num_pairs=4000,
                     statistics_interval=10,
-                    initial_learning_rate=1., save_path=log_path, epochs=5, concurrent_steps=1)
+                    initial_learning_rate=.05, save_path=log_path, epochs=5, concurrent_steps=1)
     # initialise the graph
     graph = tf.Graph()
     # run the tensorflow session
@@ -653,7 +653,7 @@ def rsgd(grads, var, lr=1, max_norm=1):
     # minkowski_grads = transform_grads(grad.values)
     vecs = tf.nn.embedding_lookup(var, grad.indices)
     tangent_grads = project_tensors_onto_tangent_space(vecs, minkowski_grads)
-    return tensor_exp_map(var, grad.indices, lr * tangent_grads)
+    return tensor_exp_map(var, grad.indices, -lr * tangent_grads)
 
 
 def to_hyperboloid_points(poincare_pts):
@@ -906,13 +906,20 @@ def test_pairwise_minkowski_dot():
     # D_ij = x_i * y_j
     x = np.array([[1, 0], [0, 1]])
     y = np.array([[3, 4], [5, 6]])
+    x1 = np.array([[1.00000000e+00, 1.48737367e-04, 2.14106520e-04]])
+    y1 = np.array([[1.00004292e+00, 9.26668756e-03, -6.51872397e-05]])
+    x2 = np.array([[1.00000000e+00, 1.48737367e-04, 2.14106520e-04]])
+    y2 = np.array([[1.00004292e+00, 9.26668756e-03, -6.51872397e-05]])
     u = tf.Variable(x, dtype=tf.float32)
     v = tf.Variable(y, dtype=tf.float32)
     retval = np.array([[-3., -5.], [4., 6.]])
     z = pairwise_minkowski_dot(u, v)
+    z1 = pairwise_minkowski_dot(x1, y1)
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
+    z1_val = sess.run(z1)
+    print('z1: ', z1_val)
     assert np.array_equal(sess.run(z), retval)
 
 
@@ -1073,12 +1080,14 @@ def test_rsgd():
     sess.run(init)
     # here the tangent space is x=1
     p2 = rsgd(grads, p1, lr=1.)
+    print('p2:', sess.run(p2))
     updated_points = tf.nn.embedding_lookup(p2, indices)
     # check that the points are on the hyperboloid
     norms = sess.run(minkowski_tensor_dot(updated_points, updated_points))
     assert np.array_equal(np.around(norms, 3), retval1)
     new_vars = sess.run(p2)
     np_new_vars = np.array(new_vars)
+    print(np_new_vars)
     assert np.array_equal(np_new_vars[2, :], input_points[2, :])
     assert np.array_equal(np_new_vars[4, :], input_points[4, :])
 

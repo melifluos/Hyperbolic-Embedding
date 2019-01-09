@@ -107,7 +107,7 @@ class cust2vec():
         # minkowski_grads = self.transform_grads(grad.values)
         vecs = tf.nn.embedding_lookup(var, grad.indices)
         tangent_grads = self.project_tensors_onto_tangent_space(vecs, minkowski_grads)
-        return self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
+        return self.tensor_exp_map(var, grad.indices, -lr * tangent_grads)
         # self.tensor_exp_map(var, grad.indices, lr * tangent_grads)
 
     def to_hyperboloid_points(self, vocab_size, embedding_size, init_width):
@@ -191,14 +191,14 @@ class cust2vec():
         v_neg = tf.matmul(v, T)
         return tf.matmul(u, v_neg, transpose_b=True)
 
-    def minkowski_dist(self, u, v):
+    def minkowski_dist(self, u, v, margin=0.05):
         """
         The distance between points in Minkowski space
         :param u: tensor of points of shape (examples, dims)
         :param v: tensor of points of shape (examples, dims)
         :return: a tensor of distances of shape (examples)
         """
-        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -1.))
+        return tf.acosh(-tf.minimum(self.minkowski_tensor_dot(u, v), -(1 + margin)))
 
     def project_onto_tangent_space(self, hyperboloid_point, minkowski_tangent):
         """
@@ -230,39 +230,6 @@ class cust2vec():
         tangent /= norm
         return tf.cosh(norm) * base + tf.sinh(norm) * tangent
 
-    # def tensor_exp_map(self, vars, indices, tangent_grads):
-    #     """
-    #     Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
-    #     :param hyperboloid_points: a tensor of points on the hyperboloid of shape (#examples, #dims)
-    #     :param tangent_grads: a tensor of gradients on the tangent spaces of the hyperboloid_points of shape (#examples, #dims)
-    #     :return:
-    #     """
-    #     # todo do we need to normalise the gradients?
-    #     hyperboloid_points = tf.nn.embedding_lookup(vars, indices)
-    #     embedding_size = self._options.embedding_size
-    #     batch_size = self._options.batch_size
-    #     # set shape is required as boolean mask can not use tensors of unknown shape
-    #     tangent_grads.set_shape([batch_size, embedding_size + 1])
-    #     norms = tf.sqrt(tf.maximum(self.minkowski_tensor_dot(tangent_grads, tangent_grads), 0))
-    #     # norms.set_shape([batch_size, 1])
-    #     norms.set_shape([None, 1])
-    #     zero = tf.constant(0, dtype=tf.float32)
-    #     nonzero_flags = tf.squeeze(tf.not_equal(norms, zero))
-    #     # nonzero_flags = tf.not_equal(norms, zero)
-    #     # nonzero_flags.set_shape([batch_size, 1])
-    #     nonzero_flags.set_shape([None])
-    #     nonzero_indices = tf.boolean_mask(indices, nonzero_flags)
-    #     print('norms shape: ', norms.shape)
-    #     print('nonzero_flags shape: ', nonzero_flags.shape)
-    #     print('tangent grads shape: ', tangent_grads.shape)
-    #     nonzero_norms = tf.boolean_mask(norms, nonzero_flags)
-    #     updated_grads = tf.boolean_mask(tangent_grads, nonzero_flags)
-    #     updated_points = tf.boolean_mask(hyperboloid_points, nonzero_flags)
-    #     normed_grads = tf.divide(updated_grads, nonzero_norms)
-    #     updates = tf.multiply(tf.cosh(nonzero_norms), updated_points) + tf.multiply(tf.sinh(nonzero_norms),
-    #                                                                                 normed_grads)
-    #     return tf.scatter_update(vars, nonzero_indices, updates)
-
     def tensor_exp_map(self, vars, indices, tangent_grads):
         """
         Map vectors in the tangent space of the hyperboloid points back onto the hyperboloid
@@ -281,15 +248,17 @@ class cust2vec():
         safe_updates = self.project_onto_manifold(safe_updates)
         return tf.scatter_update(vars, indices, safe_updates)
 
-    def pairwise_distance(self, examples, samples):
+    def pairwise_distance(self, examples, samples, margin=0.05):
         """
         creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
         :param examples: first set of vectors of shape (ndata1, ndim)
         :param samples: second set of vectors of shape (ndata2, ndim)
         :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
         """
-        dist = tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.))
+        dist = tf.acosh(-tf.minimum(self.pairwise_minkowski_dot(examples, samples), -(1. + margin)))
+        # dist = -tf.minimum(self.pairwise_minkowski_dot(examples, samples), -1.)
         return dist
+        # return samples
 
     def clip_tensor_norms(self, emb, epsilon=0.00001):
         """
@@ -362,8 +331,10 @@ class cust2vec():
             self._lr = lr
             optimizer = tf.train.GradientDescentOptimizer(lr)
 
-            grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
-            sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
+            # grads = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            sm_b_grad, emb_grad, sm_w_t_grad = optimizer.compute_gradients(loss, [self.sm_b, self.emb, self.sm_w_t])
+            # sm_b_grad = (self.remove_nan(sm_b_grad[0]), sm_b_grad[1])
+            # sm_b_grad, emb_grad, sm_w_t_grad = [(self.remove_nan(grad), var) for grad, var in grads]
 
             sm_b_grad_hist = tf.summary.histogram('smb_grad', sm_b_grad[0])
             emb_grad_hist = tf.summary.histogram('emb_grad', emb_grad[0])
@@ -448,12 +419,12 @@ class cust2vec():
         last_words, last_time, last_summary_time = initial_words, time.time(), 0
         while True:
             time.sleep(opts.statistics_interval)  # Reports our progress once a while.
-            (epoch, step, loss, words, lr, examples, labels, samples, true_logits, sampled_logits, emb, smw_t, sm_b,
+            (epoch, step, loss, words, lr, examples, labels, samples, true_logits, sampled_logits, emb, sm_w_t, sm_b,
              emb_grads,
-             smwt_grads, dist, example_emb, sampled_w) = self._session.run(
+             smwt_grads, dist, pairwise_dist, example_emb, sampled_w) = self._session.run(
                 [self._epoch, self.global_step, self._loss, self._words, self._lr, self.examples,
                  self.labels, self.samples, self.true_logits, self.sampled_logits, self.emb, self.sm_w_t, self.sm_b,
-                 self.emb_grad, self.sm_w_t_grad, self.dist, self.example_emb, self.sampled_w])
+                 self.emb_grad, self.sm_w_t_grad, self.dist, self.pairwise_dist, self.example_emb, self.sampled_w])
             assert len(examples) == opts.batch_size
             assert len(labels) == opts.batch_size
             # print('global step: ', step)
@@ -472,10 +443,13 @@ class cust2vec():
                 print('sampled logits: ', sampled_logits)
                 print("labels: ", labels, " examples: ", examples, "samples: ", samples)
                 print('example embedding: ', emb[examples, :])
-                print('label embedding: ', smw_t[labels, :])
-                print('sample embedding: ', smw_t[samples, :])
+                print('label embedding: ', sm_w_t[labels, :])
+                print('sample embedding: ', sm_w_t[samples, :])
                 print('sm_b: ', sm_b)
+                print('emb: ', emb)
+                print('sm_w_t: ', sm_w_t)
                 print('dist: ', dist)
+                print('pairwise_dist: ', pairwise_dist)
                 print('example emb: ', example_emb)
                 print('sample_w: ', sampled_w)
 
@@ -523,21 +497,6 @@ class cust2vec():
         ynorm_sq = tf.reduce_sum(tf.square(labels), axis=1)
         euclidean_dist_sq = tf.reduce_sum(tf.square(examples - labels), axis=1)
         denom = tf.multiply(1 - xnorm_sq, 1 - ynorm_sq)
-        hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
-        return hyp_dist
-
-    def pairwise_distance(self, examples, samples):
-        """
-        creates a matrix of euclidean distances D(i,j) = ||x[i,:] - y[j,:]||
-        :param examples: first set of vectors of shape (ndata1, ndim)
-        :param samples: second set of vectors of shape (ndata2, ndim)
-        :return: A numpy array of shape (ndata1, ndata2) of pairwise squared distances
-        """
-        xnorm_sq = tf.reduce_sum(tf.square(examples), axis=1)
-        ynorm_sq = tf.reduce_sum(tf.square(samples), axis=1)
-        # use the expanded version of the l2 norm to simplify broadcasting ||x-y||^2 = ||x||^2 + ||y||^2 - 2xy.T
-        euclidean_dist_sq = xnorm_sq[:, None] + ynorm_sq[None, :] - 2 * tf.matmul(examples, samples, transpose_b=True)
-        denom = (1 - xnorm_sq[:, None]) * (1 - ynorm_sq[None, :])
         hyp_dist = tf.acosh(1 + 2 * tf.divide(euclidean_dist_sq, denom))
         return hyp_dist
 
@@ -611,18 +570,23 @@ class cust2vec():
 
             # True logits: [batch_size, 1]
             # true_logits = tf.reduce_sum(tf.multiply(example_emb, true_w), 1) + true_b
-            true_logits = self.minkowski_dist(example_emb, true_w) + true_b
+            dist = self.minkowski_dist(example_emb, true_w)
+            true_logits = dist + true_b
+            self.dist = dist
             print('true logits shape: ', true_logits.shape)
 
             # Sampled logits: [batch_size, num_sampled]
             # We replicate sampled noise labels for all examples in the batch
             sampled_b_vec = tf.reshape(sampled_b, [opts.num_samples])
 
-            dist = self.pairwise_distance(example_emb, sampled_w)
-            self.dist = dist
-            sampled_logits = dist + sampled_b_vec
+            pairwise_dist = self.pairwise_distance(example_emb, sampled_w)
+            # pairwise_dist = self.minkowski_dist(example_emb, sampled_w)  # this produces infs in sm_w_t
+            self.pairwise_dist = pairwise_dist
+            sampled_logits = pairwise_dist + sampled_b_vec
             print('sampled logits shape: ', sampled_logits.shape)
         return true_logits, sampled_logits
+        # return true_logits, true_logits
+        # return true_logits, tf.ones_like(sampled_logits)
 
 
 def main(params, path1, path2):
@@ -698,7 +662,7 @@ def generate_karate_embedding():
     size = 2  # dimensionality of the embedding
     params = Params(walk_path, batch_size=4, embedding_size=size, neg_samples=5, skip_window=5, num_pairs=1500,
                     statistics_interval=0.001,
-                    initial_learning_rate=1., save_path=log_path, epochs=1, concurrent_steps=1)
+                    initial_learning_rate=0.1, save_path=log_path, epochs=1, concurrent_steps=1)
 
     path = '../../local_resources/karate/embeddings/lorentzian_Win' + '_' + utils.get_timestamp() + '.csv'
     hyp_path_in = '../../local_resources/karate/embeddings/lorentzian_hyp_Win' + '_' + utils.get_timestamp() + '.csv'
